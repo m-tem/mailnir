@@ -1,0 +1,6 @@
+.claude/
+.env
+.jj/
+dist/
+node_modules/
+target/

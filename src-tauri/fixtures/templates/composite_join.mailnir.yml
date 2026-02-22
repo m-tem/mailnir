@@ -1,0 +1,13 @@
+sources:
+  classes:
+    primary: true
+  inst:
+    join:
+      class_id: classes.id
+      term: classes.term
+to: "{{inst.email}}"
+subject: "Info for {{classes.name}} ({{classes.term}})"
+body: |
+  Hello {{inst.first_name}},
+
+  Your enrollment for {{classes.name}} in term {{classes.term}} is confirmed.

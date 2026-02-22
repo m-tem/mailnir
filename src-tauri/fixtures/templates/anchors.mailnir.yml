@@ -1,0 +1,14 @@
+_base_body: &base_body |
+  Dear {{primary.name}},
+
+  This is an important notice.
+
+  Best regards,
+  The Team
+
+sources:
+  primary:
+    primary: true
+to: "{{primary.email}}"
+subject: "Notice for {{primary.name}}"
+body: *base_body

@@ -1,0 +1,11 @@
+sources:
+  primary:
+    primary: true
+to: "{{primary.email}}"
+subject: "Plain text message for {{primary.name}}"
+body: |
+  Hello {{primary.name}},
+
+  This is a plain text email.
+  No markdown, no HTML.
+body_format: text

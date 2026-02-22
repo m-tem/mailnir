@@ -1,0 +1,9 @@
+sources:
+  primary:
+    primary: true
+to: "{{primary.email}}"
+subject: "Hello {{primary.name}}"
+body: |
+  Hi {{primary.name}},
+
+  Welcome to the system.

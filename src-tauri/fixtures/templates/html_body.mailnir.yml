@@ -1,0 +1,9 @@
+sources:
+  primary:
+    primary: true
+to: "{{primary.email}}"
+subject: "HTML message for {{primary.name}}"
+body: |
+  <h1>Hello {{primary.name}}</h1>
+  <p>This is an <strong>HTML</strong> email.</p>
+body_format: html

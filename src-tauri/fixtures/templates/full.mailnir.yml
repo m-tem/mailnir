@@ -1,0 +1,23 @@
+sources:
+  classes:
+    primary: true
+  inst:
+    join:
+      class_id: classes.id
+to: "{{inst.email}}"
+cc: "{{classes.coordinator}}"
+bcc: "admin@example.com"
+subject: "Credentials for {{classes.name}}"
+body: |
+  # Hello {{inst.first_name}},
+
+  Your class **{{classes.name}}** credentials are ready.
+
+  {{#each classes.students}}
+  - {{this.username}} / {{this.password}}
+  {{/each}}
+attachments: "{{classes.name}}/handout.pdf"
+body_format: markdown
+style: |
+  body { font-family: sans-serif; }
+  h1 { color: #333; }

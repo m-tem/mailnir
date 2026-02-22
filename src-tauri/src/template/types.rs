@@ -13,6 +13,7 @@ pub enum BodyFormat {
 pub struct SourceConfig {
     pub primary: Option<bool>,
     pub join: Option<HashMap<String, String>>,
+    pub many: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]

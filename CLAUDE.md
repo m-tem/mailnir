@@ -72,17 +72,34 @@ docs/
     phase-8-preview.md
     phase-9-polish.md
 src-tauri/              # Rust backend
+  Cargo.toml
   src/
-    lib.rs              # Library root — all core logic exposed here
-    main.rs             # Tauri app entry point
-    template/           # YAML parsing, template struct
-    data/               # File loading (JSON, YAML, TOML, CSV), format detection
-    join/               # Join engine: primary iteration, 1:1, 1:N, global
-    render/             # Handlebars rendering, markdown→HTML, CSS inlining
-    validate/           # Validation: variables, emails, attachments, required fields
-    smtp/               # Profiles, keyring credentials, send flow
-  tests/                # Integration tests
-  fixtures/             # Test templates + data files
+    lib.rs              # Library root — module declarations, Result alias
+    main.rs             # Stub fn main() {} (Tauri wired in Phase 6)
+    error.rs            # MailnirError enum (thiserror)
+    template/
+      mod.rs
+      types.rs          # Template, SourceConfig, BodyFormat
+      parse.rs          # parse_template(path), parse_template_str(str)
+      validate.rs       # validate_sources(&Template)
+    data/
+      mod.rs
+      format.rs         # DataFormat enum + detect_format(path)
+      loader.rs         # load_file(path), load_file_csv(path, opts)
+      json.rs           # load_json(path)
+      yaml.rs           # load_yaml(path)
+      toml.rs           # load_toml(path)
+      csv.rs            # CsvOptions, detect_separator, decode_bytes, load_csv
+    join/
+      mod.rs            # build_contexts(&Template, sources) → Vec<Context> (Phase 2)
+    render/             # Handlebars rendering, markdown→HTML, CSS inlining (Phase 3)
+    validate/           # Validation: variables, emails, attachments, required fields (Phase 4)
+    smtp/               # Profiles, keyring credentials, send flow (Phase 5)
+  tests/
+    phase1_integration.rs
+  fixtures/
+    templates/          # minimal, full, anchors, composite_join, html_body, text_body
+    data/               # simple.json/yaml/toml, comma/semicolon/pipe/tab.csv, latin1/windows1252.csv
 src/                    # React frontend
   components/
     DataPanel/          # Namespace slots, file picker, CSV config, status
@@ -134,7 +151,7 @@ Do NOT create a single large commit per phase. Do NOT mix refactors with feature
 
 Phases 1–5 are pure Rust backend. Phase 6+ adds UI. Each phase doc has tasks and exit criteria.
 
-**Current phase: 1 — not started.**
+**Current phase: 3 — not started.** (Phases 1–2 complete)
 
 | Phase | Doc | Summary |
 |---|---|---|

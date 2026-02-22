@@ -70,4 +70,19 @@ pub enum MailnirError {
         path: std::path::PathBuf,
         message: String,
     },
+
+    #[error("join '{namespace}' found no match for primary entry {entry_index}")]
+    JoinMissingMatch {
+        namespace: String,
+        entry_index: usize,
+    },
+
+    #[error(
+        "join '{namespace}' is ambiguous for primary entry {entry_index}: {match_count} matches"
+    )]
+    JoinAmbiguousMatch {
+        namespace: String,
+        entry_index: usize,
+        match_count: usize,
+    },
 }

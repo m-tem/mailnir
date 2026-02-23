@@ -85,4 +85,13 @@ pub enum MailnirError {
         entry_index: usize,
         match_count: usize,
     },
+
+    #[error("Handlebars render error in field '{field}': {reason}")]
+    HandlebarsRender { field: String, reason: String },
+
+    #[error("CSS inlining error: {reason}")]
+    CssInline { reason: String },
+
+    #[error("stylesheet file not found: {path}")]
+    StylesheetNotFound { path: std::path::PathBuf },
 }

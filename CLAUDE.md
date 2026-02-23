@@ -91,13 +91,15 @@ src-tauri/              # Rust backend
       toml.rs           # load_toml(path)
       csv.rs            # CsvOptions, detect_separator, decode_bytes, load_csv
     join/
-      mod.rs            # build_contexts(&Template, sources) → Vec<Context> (Phase 2)
+      mod.rs            # build_contexts, build_contexts_lenient — primary iteration, 1:1/1:N, global (Phase 2)
     render/
       mod.rs            # render_context, RenderedEmail — Handlebars, markdown→HTML, CSS inlining (Phase 3)
-    validate/           # Validation: variables, emails, attachments, required fields (Phase 4)
+    validate/
+      mod.rs            # validate_all, ValidationReport, ValidationIssue — per-entry validation (Phase 4)
     smtp/               # Profiles, keyring credentials, send flow (Phase 5)
   tests/
     phase1_integration.rs
+    phase4_integration.rs
   fixtures/
     templates/          # minimal, full, anchors, composite_join, html_body, text_body
     data/               # simple.json/yaml/toml, comma/semicolon/pipe/tab.csv, latin1/windows1252.csv
@@ -152,7 +154,7 @@ Do NOT create a single large commit per phase. Do NOT mix refactors with feature
 
 Phases 1–5 are pure Rust backend. Phase 6+ adds UI. Each phase doc has tasks and exit criteria.
 
-**Current phase: 3 — complete.** (Phases 1–3 complete)
+**Current phase: 4 — complete.** (Phases 1–4 complete)
 
 | Phase | Doc | Summary |
 |---|---|---|

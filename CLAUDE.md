@@ -96,10 +96,12 @@ src-tauri/              # Rust backend
       mod.rs            # render_context, RenderedEmail — Handlebars, markdown→HTML, CSS inlining (Phase 3)
     validate/
       mod.rs            # validate_all, ValidationReport, ValidationIssue — per-entry validation (Phase 4)
-    smtp/               # Profiles, keyring credentials, send flow (Phase 5)
+    smtp/
+      mod.rs            # SmtpProfile, Encryption, SmtpCredentials, SendReport, send_all (Phase 5)
   tests/
     phase1_integration.rs
     phase4_integration.rs
+    phase5_integration.rs
   fixtures/
     templates/          # minimal, full, anchors, composite_join, html_body, text_body
     data/               # simple.json/yaml/toml, comma/semicolon/pipe/tab.csv, latin1/windows1252.csv
@@ -154,7 +156,7 @@ Do NOT create a single large commit per phase. Do NOT mix refactors with feature
 
 Phases 1–5 are pure Rust backend. Phase 6+ adds UI. Each phase doc has tasks and exit criteria.
 
-**Current phase: 4 — complete.** (Phases 1–4 complete)
+**Current phase: 5 — complete.** (Phases 1–5 complete)
 
 | Phase | Doc | Summary |
 |---|---|---|

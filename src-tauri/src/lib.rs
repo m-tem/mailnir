@@ -2,6 +2,7 @@ pub mod data;
 pub mod error;
 pub mod join;
 pub mod render;
+pub mod smtp;
 pub mod template;
 pub mod validate;
 

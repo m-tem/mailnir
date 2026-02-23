@@ -94,4 +94,19 @@ pub enum MailnirError {
 
     #[error("stylesheet file not found: {path}")]
     StylesheetNotFound { path: std::path::PathBuf },
+
+    #[error("profile JSON error in {path}: {source}")]
+    ProfileJson {
+        path: std::path::PathBuf,
+        source: serde_json::Error,
+    },
+
+    #[error("SMTP connection error: {reason}")]
+    SmtpConnect { reason: String },
+
+    #[error("SMTP send error for entry {entry_index}: {reason}")]
+    SmtpSend { entry_index: usize, reason: String },
+
+    #[error("keyring error: {reason}")]
+    Keyring { reason: String },
 }

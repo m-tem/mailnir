@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde_json::{Map, Value};
 
-use crate::template::Template;
+use crate::template::{SourceConfig, Template};
 use crate::MailnirError;
 
 /// Build one merged context per primary source entry.
@@ -15,6 +15,21 @@ pub fn build_contexts(
     template: &Template,
     sources: &HashMap<String, Value>,
 ) -> crate::Result<Vec<Map<String, Value>>> {
+    build_contexts_lenient(template, sources)?
+        .into_iter()
+        .collect()
+}
+
+/// Like [`build_contexts`], but continues past per-entry join errors.
+///
+/// The outer `Result` fails only on structural errors (no primary source,
+/// malformed secondary source shape). The inner `Result` for each entry
+/// is `Ok(context)` on join success or `Err(JoinMissingMatch | JoinAmbiguousMatch)`
+/// on per-entry failure.
+pub fn build_contexts_lenient(
+    template: &Template,
+    sources: &HashMap<String, Value>,
+) -> crate::Result<Vec<crate::Result<Map<String, Value>>>> {
     let primary_name = template
         .sources
         .iter()
@@ -39,73 +54,102 @@ pub fn build_contexts(
         .map(|(name, _)| name.as_str())
         .collect();
 
-    let secondary_sources: Vec<(&str, &crate::template::SourceConfig)> = template
+    let secondary_sources_cfg: Vec<(&str, &SourceConfig)> = template
         .sources
         .iter()
         .filter(|(name, cfg)| name.as_str() != primary_name && cfg.join.is_some())
         .map(|(name, cfg)| (name.as_str(), cfg))
         .collect();
 
-    let mut contexts = Vec::with_capacity(primary_array.len());
+    // Pre-validate secondary source shapes — structural failure, not per-entry.
+    let secondary_sources: Vec<(&str, &SourceConfig, &[Value])> = secondary_sources_cfg
+        .iter()
+        .map(|&(ns_name, ns_cfg)| {
+            let array = sources
+                .get(ns_name)
+                .and_then(Value::as_array)
+                .ok_or_else(|| MailnirError::InvalidDataShape {
+                    path: std::path::PathBuf::from(ns_name),
+                    message: "secondary source must be an array".into(),
+                })?;
+            Ok((ns_name, ns_cfg, array.as_slice()))
+        })
+        .collect::<crate::Result<_>>()?;
+
+    let mut results = Vec::with_capacity(primary_array.len());
 
     for (entry_index, primary_entry) in primary_array.iter().enumerate() {
-        let mut ctx: Map<String, Value> = Map::new();
+        results.push(build_single_context(
+            primary_name,
+            primary_entry,
+            entry_index,
+            &global_names,
+            &secondary_sources,
+            sources,
+        ));
+    }
 
-        ctx.insert(primary_name.to_string(), primary_entry.clone());
+    Ok(results)
+}
 
-        for &global_name in &global_names {
-            if let Some(data) = sources.get(global_name) {
-                ctx.insert(global_name.to_string(), data.clone());
-            }
+/// Build a merged context for a single primary source entry.
+///
+/// Returns `Ok(context)` or `Err(JoinMissingMatch | JoinAmbiguousMatch)`.
+/// Secondary source arrays must be pre-validated before calling.
+fn build_single_context(
+    primary_name: &str,
+    primary_entry: &Value,
+    entry_index: usize,
+    global_names: &[&str],
+    secondary_sources: &[(&str, &SourceConfig, &[Value])],
+    sources: &HashMap<String, Value>,
+) -> crate::Result<Map<String, Value>> {
+    let mut ctx: Map<String, Value> = Map::new();
+
+    ctx.insert(primary_name.to_string(), primary_entry.clone());
+
+    for &global_name in global_names {
+        if let Some(data) = sources.get(global_name) {
+            ctx.insert(global_name.to_string(), data.clone());
         }
+    }
 
-        for &(ns_name, ns_cfg) in &secondary_sources {
-            let join_map = ns_cfg.join.as_ref().expect("secondary always has join");
-            let secondary_array =
-                sources
-                    .get(ns_name)
-                    .and_then(Value::as_array)
-                    .ok_or_else(|| MailnirError::InvalidDataShape {
-                        path: std::path::PathBuf::from(ns_name),
-                        message: "secondary source must be an array".into(),
-                    })?;
+    for &(ns_name, ns_cfg, secondary_array) in secondary_sources {
+        let join_map = ns_cfg.join.as_ref().expect("secondary always has join");
 
-            let matches: Vec<&Value> = secondary_array
-                .iter()
-                .filter(|row| predicates_match(row, join_map, &ctx))
-                .collect();
+        let matches: Vec<&Value> = secondary_array
+            .iter()
+            .filter(|row| predicates_match(row, join_map, &ctx))
+            .collect();
 
-            if ns_cfg.many == Some(true) {
-                ctx.insert(
-                    ns_name.to_string(),
-                    Value::Array(matches.into_iter().cloned().collect()),
-                );
-            } else {
-                match matches.len() {
-                    0 => {
-                        return Err(MailnirError::JoinMissingMatch {
-                            namespace: ns_name.to_string(),
-                            entry_index,
-                        })
-                    }
-                    1 => {
-                        ctx.insert(ns_name.to_string(), matches[0].clone());
-                    }
-                    n => {
-                        return Err(MailnirError::JoinAmbiguousMatch {
-                            namespace: ns_name.to_string(),
-                            entry_index,
-                            match_count: n,
-                        })
-                    }
+        if ns_cfg.many == Some(true) {
+            ctx.insert(
+                ns_name.to_string(),
+                Value::Array(matches.into_iter().cloned().collect()),
+            );
+        } else {
+            match matches.len() {
+                0 => {
+                    return Err(MailnirError::JoinMissingMatch {
+                        namespace: ns_name.to_string(),
+                        entry_index,
+                    })
+                }
+                1 => {
+                    ctx.insert(ns_name.to_string(), matches[0].clone());
+                }
+                n => {
+                    return Err(MailnirError::JoinAmbiguousMatch {
+                        namespace: ns_name.to_string(),
+                        entry_index,
+                        match_count: n,
+                    })
                 }
             }
         }
-
-        contexts.push(ctx);
     }
 
-    Ok(contexts)
+    Ok(ctx)
 }
 
 /// Returns true if all join predicates hold for `row` against `ctx`.
@@ -296,5 +340,67 @@ mod tests {
             MailnirError::JoinAmbiguousMatch { namespace, entry_index: 0, match_count: 2 }
             if namespace == "inst"
         ));
+    }
+
+    // --- build_contexts_lenient tests ---
+
+    #[test]
+    fn test_lenient_collects_per_entry_join_failure() {
+        let t = make_template(
+            "sources:\n  classes: {primary: true}\n  inst:\n    join:\n      class_id: classes.id\nto: a\nsubject: b\nbody: c",
+        );
+        let sources = make_sources(&[
+            ("classes", json!([{"id": 1}, {"id": 99}])),
+            ("inst", json!([{"class_id": 1, "name": "Prof. Jones"}])),
+        ]);
+
+        let results = build_contexts_lenient(&t, &sources).expect("outer should succeed");
+        assert_eq!(results.len(), 2);
+        // Entry 0 (id=1) matches
+        assert!(results[0].is_ok());
+        // Entry 1 (id=99) has no match
+        let err = results[1].as_ref().expect_err("entry 1 should fail");
+        assert!(matches!(
+            err,
+            MailnirError::JoinMissingMatch { namespace, entry_index: 1 }
+            if namespace == "inst"
+        ));
+    }
+
+    #[test]
+    fn test_lenient_structural_failure_propagates() {
+        let t = make_template(
+            "sources:\n  classes: {primary: true}\n  inst:\n    join:\n      class_id: classes.id\nto: a\nsubject: b\nbody: c",
+        );
+        // "inst" source is not an array — structural failure
+        let sources = make_sources(&[
+            ("classes", json!([{"id": 1}])),
+            ("inst", json!({"class_id": 1})),
+        ]);
+
+        let err = build_contexts_lenient(&t, &sources).expect_err("outer should fail structurally");
+        assert!(matches!(err, MailnirError::InvalidDataShape { .. }));
+    }
+
+    #[test]
+    fn test_lenient_all_ok_when_no_failures() {
+        let t = make_template(
+            "sources:\n  classes: {primary: true}\n  inst:\n    join:\n      class_id: classes.id\nto: a\nsubject: b\nbody: c",
+        );
+        let sources = make_sources(&[
+            ("classes", json!([{"id": 1}, {"id": 2}])),
+            (
+                "inst",
+                json!([
+                    {"class_id": 1, "name": "A"},
+                    {"class_id": 2, "name": "B"},
+                ]),
+            ),
+        ]);
+
+        let results = build_contexts_lenient(&t, &sources).expect("should succeed");
+        assert_eq!(results.len(), 2);
+        assert!(results[0].is_ok());
+        assert!(results[1].is_ok());
     }
 }

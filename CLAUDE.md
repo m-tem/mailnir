@@ -72,10 +72,15 @@ docs/
     phase-8-preview.md
     phase-9-polish.md
 src-tauri/              # Rust backend
-  Cargo.toml
+  Cargo.toml            # tauri-backend feature gates tauri/tauri-plugin-dialog as optional
+  build.rs              # tauri_build::build() gated by CARGO_FEATURE_TAURI_BACKEND
+  tauri.conf.json       # App identifier, window size, devUrl/frontendDist
+  capabilities/
+    main-capability.json  # core:*:default, dialog:allow-open, dialog:allow-save
   src/
-    lib.rs              # Library root — module declarations, Result alias
-    main.rs             # Stub fn main() {} (Tauri wired in Phase 6)
+    lib.rs              # Library root — module declarations, Result alias (no Tauri)
+    main.rs             # Tauri entry point — mod commands, builder, invoke_handler
+    commands.rs         # IPC commands: parse_template_cmd, preview_csv, smtp CRUD
     error.rs            # MailnirError enum (thiserror)
     template/
       mod.rs
@@ -105,13 +110,33 @@ src-tauri/              # Rust backend
   fixtures/
     templates/          # minimal, full, anchors, composite_join, html_body, text_body
     data/               # simple.json/yaml/toml, comma/semicolon/pipe/tab.csv, latin1/windows1252.csv
+package.json            # React 19, Vite, @tauri-apps/api v2, tailwindcss v4, shadcn/ui
+vite.config.ts          # @tailwindcss/vite plugin, port 1420, @/ alias
+tsconfig.json           # TypeScript project references
+tsconfig.app.json       # App TypeScript config with @/* path alias
+tsconfig.node.json      # Node/Vite TypeScript config
+index.html              # Vite entry HTML
+biome.json              # Biome linter/formatter config (run: npx biome check --write src/)
 src/                    # React frontend
+  index.css             # Tailwind v4 import + shadcn CSS variable theme
+  main.tsx              # React entry point
+  App.tsx               # Root component — all app state + 4-panel layout
+  lib/
+    ipc.ts              # Typed invoke() wrappers for all Tauri IPC commands
   components/
-    DataPanel/          # Namespace slots, file picker, CSV config, status
-    TemplateEditor/     # Per-field editors, Handlebars autocomplete
-    Preview/            # Instance navigator, HTML/plain-text preview
-    SmtpSettings/       # Profile CRUD, connection test
-    SendDialog/         # Confirmation, progress, report
+    DataPanel/
+      index.tsx         # Namespace slot list, "Open a template" placeholder
+      SourceSlotRow.tsx # Per-namespace row: file picker, status icon, badges
+      CsvConfigPanel.tsx  # Separator/encoding selectors + 5-row preview table
+    SmtpSettings/
+      SmtpSettingsDialog.tsx  # Profile list/CRUD dialog with inline test
+      SmtpProfileForm.tsx     # Add/edit SMTP profile form
+    StatusBar/
+      index.tsx         # Profile selector, SMTP Settings, Preview, Send buttons
+    TemplateEditor/
+      index.tsx         # Phase 7 placeholder
+    Preview/
+      index.tsx         # Phase 8 placeholder
 ```
 
 ## Code Standards
@@ -134,7 +159,7 @@ Errors use a crate-level error enum with `thiserror`. No `.unwrap()` in non-test
 
 Run regularly during development:
 ```sh
-npx biome check --write
+npx biome check --write src/
 ```
 
 Components are single-responsibility. State flows down, events flow up. Tauri IPC commands are the only bridge to backend logic — no business logic in the frontend.
@@ -156,7 +181,7 @@ Do NOT create a single large commit per phase. Do NOT mix refactors with feature
 
 Phases 1–5 are pure Rust backend. Phase 6+ adds UI. Each phase doc has tasks and exit criteria.
 
-**Current phase: 5 — complete.** (Phases 1–5 complete)
+**Current phase: 6 — complete.** (Phases 1–6 complete)
 
 | Phase | Doc | Summary |
 |---|---|---|

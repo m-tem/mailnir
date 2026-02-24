@@ -13,6 +13,8 @@ fn main() {
             commands::store_smtp_credential,
             commands::delete_smtp_credential,
             commands::test_smtp_connection,
+            commands::get_data_fields,
+            commands::save_template,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

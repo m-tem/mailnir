@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::Manager;
 
 // ── IPC response types ────────────────────────────────────────────────────────
@@ -13,10 +13,40 @@ pub struct SourceSlot {
     pub join_keys: Vec<String>,
 }
 
+/// Editable template field values, returned on parse and sent back on save.
+#[derive(Debug, Serialize)]
+pub struct TemplateFields {
+    pub to: String,
+    pub cc: Option<String>,
+    pub bcc: Option<String>,
+    pub subject: String,
+    pub body: String,
+    pub attachments: Option<String>,
+    /// "markdown" | "html" | "text" | null (null means absent from YAML = default markdown)
+    pub body_format: Option<String>,
+    pub stylesheet: Option<String>,
+    pub style: Option<String>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct TemplateInfo {
     pub path: String,
     pub sources: Vec<SourceSlot>,
+    pub fields: TemplateFields,
+}
+
+/// Patch payload for save_template — mirrors TemplateFields.
+#[derive(Debug, Deserialize)]
+pub struct TemplatePatch {
+    pub to: String,
+    pub cc: Option<String>,
+    pub bcc: Option<String>,
+    pub subject: String,
+    pub body: String,
+    pub attachments: Option<String>,
+    pub body_format: Option<String>,
+    pub stylesheet: Option<String>,
+    pub style: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -66,7 +96,27 @@ pub fn parse_template_cmd(path: String) -> Result<TemplateInfo, String> {
             .then(a.namespace.cmp(&b.namespace))
     });
 
-    Ok(TemplateInfo { path, sources })
+    let fields = TemplateFields {
+        to: template.to.clone(),
+        cc: template.cc.clone(),
+        bcc: template.bcc.clone(),
+        subject: template.subject.clone(),
+        body: template.body.clone(),
+        attachments: template.attachments.clone(),
+        body_format: template.body_format.as_ref().map(|f| match f {
+            mailnir_lib::template::BodyFormat::Markdown => "markdown".to_string(),
+            mailnir_lib::template::BodyFormat::Html => "html".to_string(),
+            mailnir_lib::template::BodyFormat::Text => "text".to_string(),
+        }),
+        stylesheet: template.stylesheet.clone(),
+        style: template.style.clone(),
+    };
+
+    Ok(TemplateInfo {
+        path,
+        sources,
+        fields,
+    })
 }
 
 /// Load a CSV file with optional separator/encoding overrides and return a preview.
@@ -188,6 +238,91 @@ pub async fn test_smtp_connection(
     mailnir_lib::smtp::test_connection(&profile, &creds)
         .await
         .map_err(|e| e.to_string())
+}
+
+/// Extract field names (keys of the first object) from any supported data file.
+///
+/// Returns a sorted list of key names. Returns an empty list if the file is
+/// empty, has no objects, or the format is not recognised — never errors on
+/// unexpected structure.
+#[tauri::command]
+pub fn get_data_fields(path: String) -> Result<Vec<String>, String> {
+    let value = mailnir_lib::data::load_file(Path::new(&path)).map_err(|e| e.to_string())?;
+    let mut keys: Vec<String> = value
+        .as_array()
+        .and_then(|a| a.first())
+        .and_then(|v| v.as_object())
+        .map(|o| o.keys().cloned().collect())
+        .unwrap_or_default();
+    keys.sort();
+    Ok(keys)
+}
+
+/// Overwrite the editable fields of a template YAML file, preserving `sources`
+/// and any other keys not managed by the editor.
+///
+/// Uses a serde_yaml::Value read-modify-write so the sources block is
+/// preserved verbatim. YAML anchors are expanded on write (acceptable trade-off
+/// for Phase 7).
+#[tauri::command]
+pub fn save_template(path: String, patch: TemplatePatch) -> Result<(), String> {
+    let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let mut doc: serde_yaml::Value = serde_yaml::from_str(&content).map_err(|e| e.to_string())?;
+    let map = doc
+        .as_mapping_mut()
+        .ok_or_else(|| "template root is not a YAML mapping".to_string())?;
+
+    // Helper: upsert a string key in the mapping.
+    macro_rules! set_str {
+        ($key:expr, $val:expr) => {
+            map.insert(
+                serde_yaml::Value::String($key.to_string()),
+                serde_yaml::Value::String($val),
+            );
+        };
+    }
+    // Helper: set an optional key; remove the key when the value is None or empty.
+    macro_rules! set_opt {
+        ($key:expr, $val:expr) => {
+            match $val {
+                Some(v) if !v.is_empty() => {
+                    map.insert(
+                        serde_yaml::Value::String($key.to_string()),
+                        serde_yaml::Value::String(v),
+                    );
+                }
+                _ => {
+                    map.remove(serde_yaml::Value::String($key.to_string()));
+                }
+            }
+        };
+    }
+
+    set_str!("to", patch.to);
+    set_str!("subject", patch.subject);
+    set_str!("body", patch.body);
+    set_opt!("cc", patch.cc);
+    set_opt!("bcc", patch.bcc);
+    set_opt!("attachments", patch.attachments);
+    set_opt!("stylesheet", patch.stylesheet);
+    set_opt!("style", patch.style);
+
+    // body_format: write "markdown"/"html"/"text" if present; remove key otherwise.
+    match patch.body_format.as_deref() {
+        Some("markdown") | Some("html") | Some("text") => {
+            map.insert(
+                serde_yaml::Value::String("body_format".to_string()),
+                serde_yaml::Value::String(patch.body_format.unwrap()),
+            );
+        }
+        _ => {
+            map.remove(serde_yaml::Value::String("body_format".to_string()));
+        }
+    }
+
+    let yaml_out = serde_yaml::to_string(&doc).map_err(|e| e.to_string())?;
+    std::fs::write(&path, yaml_out).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

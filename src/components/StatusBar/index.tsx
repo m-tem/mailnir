@@ -1,0 +1,79 @@
+import { Button } from "@/components/ui/button";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
+import type { SmtpProfile } from "@/lib/ipc";
+
+interface Props {
+	profiles: SmtpProfile[];
+	selectedProfileName: string | null;
+	onProfileChange: (name: string) => void;
+	onSmtpSettings: () => void;
+	allSourcesLoaded: boolean;
+	onPreview: () => void;
+	onSend: () => void;
+}
+
+export default function StatusBar({
+	profiles,
+	selectedProfileName,
+	onProfileChange,
+	onSmtpSettings,
+	allSourcesLoaded,
+	onPreview,
+	onSend,
+}: Props) {
+	return (
+		<div className="flex items-center gap-2 border-t bg-background px-4 py-2">
+			<Select
+				value={selectedProfileName ?? ""}
+				onValueChange={onProfileChange}
+				disabled={profiles.length === 0}
+			>
+				<SelectTrigger className="h-7 w-44 text-xs">
+					<SelectValue placeholder="No SMTP profile" />
+				</SelectTrigger>
+				<SelectContent>
+					{profiles.map((p) => (
+						<SelectItem key={p.name} value={p.name} className="text-xs">
+							{p.name}
+						</SelectItem>
+					))}
+				</SelectContent>
+			</Select>
+
+			<Button
+				size="sm"
+				variant="ghost"
+				className="h-7 px-2 text-xs"
+				onClick={onSmtpSettings}
+			>
+				SMTP Settings
+			</Button>
+
+			<div className="flex-1" />
+
+			<Button
+				size="sm"
+				variant="outline"
+				className="h-7 text-xs"
+				disabled={!allSourcesLoaded}
+				onClick={onPreview}
+			>
+				Preview
+			</Button>
+			<Button
+				size="sm"
+				className="h-7 text-xs"
+				disabled={!allSourcesLoaded || !selectedProfileName}
+				onClick={onSend}
+			>
+				Send
+			</Button>
+		</div>
+	);
+}

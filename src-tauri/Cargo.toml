@@ -6,10 +6,16 @@ edition = "2021"
 [lib]
 name = "mailnir_lib"
 path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
 
 [[bin]]
 name = "mailnir"
 path = "src/main.rs"
+required-features = ["tauri-backend"]
+
+[features]
+default = ["tauri-backend"]
+tauri-backend = ["dep:tauri", "dep:tauri-plugin-dialog"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -25,6 +31,11 @@ css-inline = { version = "0.14", default-features = false }
 keyring = "3"
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync", "macros", "time"] }
 lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls-tls"] }
+tauri = { version = "2", features = [], optional = true }
+tauri-plugin-dialog = { version = "2", optional = true }
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
 
 [dev-dependencies]
 tempfile = "3"

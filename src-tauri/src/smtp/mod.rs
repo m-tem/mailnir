@@ -478,7 +478,6 @@ mod tests {
         assert!(matches!(result, Err(MailnirError::Keyring { .. })));
     }
 
-
     #[test]
     fn test_send_report_counts() {
         let report = SendReport {

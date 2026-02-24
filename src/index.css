@@ -122,3 +122,11 @@
 		@apply bg-background text-foreground;
 	}
 }
+
+/* CodeMirror Handlebars expression highlight */
+.cm-hb-expression {
+	color: var(--primary);
+	background-color: color-mix(in srgb, var(--primary) 10%, transparent);
+	border-radius: 2px;
+	font-weight: 500;
+}

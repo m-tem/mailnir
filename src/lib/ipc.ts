@@ -9,9 +9,23 @@ export interface SourceSlot {
 	join_keys: string[];
 }
 
+export interface TemplateFields {
+	to: string;
+	cc: string | null;
+	bcc: string | null;
+	subject: string;
+	body: string;
+	attachments: string | null;
+	/** "markdown" | "html" | "text" | null (null = absent from YAML = default markdown) */
+	body_format: "markdown" | "html" | "text" | null;
+	stylesheet: string | null;
+	style: string | null;
+}
+
 export interface TemplateInfo {
 	path: string;
 	sources: SourceSlot[];
+	fields: TemplateFields;
 }
 
 export interface CsvPreviewResult {
@@ -70,3 +84,11 @@ export const testSmtpConnection = (
 	password: string,
 ): Promise<void> =>
 	invoke("test_smtp_connection", { profile, username, password });
+
+export const getDataFields = (path: string): Promise<string[]> =>
+	invoke("get_data_fields", { path });
+
+export const saveTemplate = (
+	path: string,
+	patch: TemplateFields,
+): Promise<void> => invoke("save_template", { path, patch });

@@ -1,18 +1,26 @@
 import { open } from "@tauri-apps/plugin-dialog";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import DataPanel, { type SourceState } from "@/components/DataPanel/index";
 import Preview from "@/components/Preview/index";
 import SmtpSettingsDialog from "@/components/SmtpSettings/SmtpSettingsDialog";
 import StatusBar from "@/components/StatusBar/index";
 import TemplateEditor from "@/components/TemplateEditor/index";
 import { Button } from "@/components/ui/button";
+import {
+	ResizableHandle,
+	ResizablePanel,
+	ResizablePanelGroup,
+} from "@/components/ui/resizable";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import {
+	getDataFields,
 	getSmtpProfiles,
 	parseTemplate,
 	previewCsv,
 	type SmtpProfile,
 	saveSmtpProfiles,
+	saveTemplate,
+	type TemplateFields,
 	type TemplateInfo,
 } from "@/lib/ipc";
 
@@ -25,11 +33,26 @@ export default function App() {
 	const [templatePath, setTemplatePath] = useState<string | null>(null);
 	const [templateInfo, setTemplateInfo] = useState<TemplateInfo | null>(null);
 	const [templateError, setTemplateError] = useState<string | null>(null);
+	const [templateFields, setTemplateFields] = useState<TemplateFields | null>(
+		null,
+	);
+	/** Incremented on every successful template open to force editor remount. */
+	const [templateLoadId, setTemplateLoadId] = useState(0);
 
 	// ── Source loading state ────────────────────────────────────────────────────
 	const [sourcesState, setSourcesState] = useState<Record<string, SourceState>>(
 		{},
 	);
+	/** Field names per namespace, populated when a data file is loaded. */
+	const [namespaceFields, setNamespaceFields] = useState<
+		Record<string, string[]>
+	>({});
+
+	// ── Save state ──────────────────────────────────────────────────────────────
+	const [saveStatus, setSaveStatus] = useState<
+		"idle" | "saving" | "saved" | "error"
+	>("idle");
+	const [saveError, setSaveError] = useState<string | null>(null);
 
 	// ── SMTP state ──────────────────────────────────────────────────────────────
 	const [smtpProfiles, setSmtpProfiles] = useState<SmtpProfile[]>([]);
@@ -39,6 +62,11 @@ export default function App() {
 	const [smtpDialogOpen, setSmtpDialogOpen] = useState(false);
 
 	// ── Derived ─────────────────────────────────────────────────────────────────
+	const namespaces = useMemo(
+		() => templateInfo?.sources.map((s) => s.namespace) ?? [],
+		[templateInfo],
+	);
+
 	const allSourcesLoaded =
 		templateInfo?.sources.every(
 			(slot) =>
@@ -67,7 +95,12 @@ export default function App() {
 			const info = await parseTemplate(selected);
 			setTemplatePath(selected);
 			setTemplateInfo(info);
+			setTemplateFields(info.fields);
+			setTemplateLoadId((n) => n + 1);
 			setSourcesState({});
+			setNamespaceFields({});
+			setSaveStatus("idle");
+			setSaveError(null);
 		} catch (err) {
 			setTemplateError(String(err));
 		}
@@ -88,6 +121,10 @@ export default function App() {
 						error: null,
 					},
 				}));
+				setNamespaceFields((prev) => ({
+					...prev,
+					[namespace]: preview.headers,
+				}));
 			} catch (err) {
 				setSourcesState((prev) => ({
 					...prev,
@@ -101,7 +138,7 @@ export default function App() {
 				}));
 			}
 		} else {
-			// Non-CSV: just record path as loaded (data will be read at join/send time)
+			// Non-CSV: record path and fetch field names for autocomplete
 			setSourcesState((prev) => ({
 				...prev,
 				[namespace]: {
@@ -112,6 +149,13 @@ export default function App() {
 					error: null,
 				},
 			}));
+			try {
+				const fields = await getDataFields(path);
+				setNamespaceFields((prev) => ({ ...prev, [namespace]: fields }));
+			} catch {
+				// Non-critical: autocomplete just won't offer field names
+				setNamespaceFields((prev) => ({ ...prev, [namespace]: [] }));
+			}
 		}
 	};
 
@@ -183,6 +227,28 @@ export default function App() {
 		}
 	};
 
+	const handleFieldChange = (
+		field: keyof TemplateFields,
+		value: string | null,
+	) => {
+		setTemplateFields((prev) => (prev ? { ...prev, [field]: value } : prev));
+		setSaveStatus("idle");
+	};
+
+	const handleSaveTemplate = async () => {
+		if (!templatePath || !templateFields) return;
+		setSaveStatus("saving");
+		setSaveError(null);
+		try {
+			await saveTemplate(templatePath, templateFields);
+			setSaveStatus("saved");
+			setTimeout(() => setSaveStatus("idle"), 2000);
+		} catch (err) {
+			setSaveError(String(err));
+			setSaveStatus("error");
+		}
+	};
+
 	const handleSaveProfiles = async (profiles: SmtpProfile[]) => {
 		await saveSmtpProfiles(profiles);
 		setSmtpProfiles(profiles);
@@ -209,9 +275,9 @@ export default function App() {
 				</div>
 
 				{/* Main panels */}
-				<div className="flex min-h-0 flex-1">
+				<ResizablePanelGroup direction="horizontal" className="min-h-0 flex-1">
 					{/* Data panel */}
-					<div className="w-72 shrink-0 border-r">
+					<ResizablePanel defaultSize={22} minSize={10}>
 						<DataPanel
 							templateInfo={templateInfo}
 							sourcesState={sourcesState}
@@ -219,18 +285,32 @@ export default function App() {
 							onSeparatorChange={handleSeparatorChange}
 							onEncodingChange={handleEncodingChange}
 						/>
-					</div>
+					</ResizablePanel>
 
-					{/* Template editor (placeholder) */}
-					<div className="min-w-0 flex-1 border-r">
-						<TemplateEditor templatePath={templatePath} />
-					</div>
+					<ResizableHandle withHandle />
+
+					{/* Template editor */}
+					<ResizablePanel defaultSize={48} minSize={25}>
+						<TemplateEditor
+							templatePath={templatePath}
+							templateFields={templateFields}
+							loadId={templateLoadId}
+							namespaces={namespaces}
+							namespaceFields={namespaceFields}
+							saveStatus={saveStatus}
+							saveError={saveError}
+							onFieldChange={handleFieldChange}
+							onSave={handleSaveTemplate}
+						/>
+					</ResizablePanel>
+
+					<ResizableHandle withHandle />
 
 					{/* Preview (placeholder) */}
-					<div className="w-96 shrink-0">
+					<ResizablePanel defaultSize={30} minSize={10}>
 						<Preview />
-					</div>
-				</div>
+					</ResizablePanel>
+				</ResizablePanelGroup>
 
 				{/* Status bar */}
 				<StatusBar

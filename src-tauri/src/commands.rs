@@ -1,6 +1,8 @@
+use std::collections::HashMap;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use tauri::Manager;
 
 // ── IPC response types ────────────────────────────────────────────────────────
@@ -55,6 +57,42 @@ pub struct CsvPreviewResult {
     pub headers: Vec<String>,
     pub preview_rows: Vec<Vec<String>>,
     pub total_rows: usize,
+}
+
+/// Source file specification sent from the frontend for preview commands.
+#[derive(Debug, Deserialize)]
+pub struct SourceFileSpec {
+    pub namespace: String,
+    pub path: String,
+    pub separator: Option<String>,
+    pub encoding: Option<String>,
+}
+
+/// Per-entry summary for the preview validation report.
+#[derive(Debug, Serialize)]
+pub struct PreviewEntryStatus {
+    pub entry_index: usize,
+    pub is_valid: bool,
+    pub issues: Vec<String>,
+}
+
+/// Result of the preview_validate command.
+#[derive(Debug, Serialize)]
+pub struct PreviewValidation {
+    pub entry_count: usize,
+    pub entries: Vec<PreviewEntryStatus>,
+}
+
+/// One fully rendered email for preview.
+#[derive(Debug, Serialize)]
+pub struct PreviewRenderedEmail {
+    pub to: String,
+    pub cc: Option<String>,
+    pub bcc: Option<String>,
+    pub subject: String,
+    pub html_body: Option<String>,
+    pub text_body: String,
+    pub attachments: Vec<String>,
 }
 
 // ── Commands ──────────────────────────────────────────────────────────────────
@@ -135,10 +173,9 @@ pub fn preview_csv(
     let content = mailnir_lib::data::csv::decode_bytes(&bytes, encoding.as_deref())
         .map_err(|e| e.to_string())?;
 
-    let sep_byte: u8 = match separator.as_deref() {
-        Some("\\t") | Some("\t") => b'\t',
-        Some(s) if !s.is_empty() => s.as_bytes()[0],
-        _ => {
+    let sep_byte: u8 = match parse_separator_override(separator.as_deref()) {
+        Some(b) => b,
+        None => {
             let first_line = content.lines().find(|l| !l.trim().is_empty()).unwrap_or("");
             mailnir_lib::data::csv::detect_separator(first_line)
         }
@@ -325,9 +362,172 @@ pub fn save_template(path: String, patch: TemplatePatch) -> Result<(), String> {
     Ok(())
 }
 
+/// Validate all entries for a template with the given field overrides and sources.
+///
+/// Returns per-entry validation status without saving anything to disk.
+#[tauri::command]
+pub fn preview_validate(
+    template_path: String,
+    fields: TemplatePatch,
+    source_files: Vec<SourceFileSpec>,
+) -> Result<PreviewValidation, String> {
+    let path = Path::new(&template_path);
+    let mut template = mailnir_lib::template::parse_template(path).map_err(|e| e.to_string())?;
+    apply_patch(&mut template, &fields);
+
+    let template_dir = path.parent().unwrap_or(Path::new("."));
+    let sources = load_sources(&source_files)?;
+
+    let report = mailnir_lib::validate::validate_all(&template, &sources, template_dir)
+        .map_err(|e| e.to_string())?;
+
+    let entries: Vec<PreviewEntryStatus> = report
+        .entries
+        .iter()
+        .map(|entry| PreviewEntryStatus {
+            entry_index: entry.entry_index,
+            is_valid: entry.is_valid(),
+            issues: entry.issues.iter().map(format_issue).collect(),
+        })
+        .collect();
+
+    Ok(PreviewValidation {
+        entry_count: entries.len(),
+        entries,
+    })
+}
+
+/// Render a single email entry for preview with the given field overrides.
+///
+/// Returns the fully rendered email without saving anything to disk.
+#[tauri::command]
+pub fn preview_render_entry(
+    template_path: String,
+    fields: TemplatePatch,
+    source_files: Vec<SourceFileSpec>,
+    entry_index: usize,
+) -> Result<PreviewRenderedEmail, String> {
+    let path = Path::new(&template_path);
+    let mut template = mailnir_lib::template::parse_template(path).map_err(|e| e.to_string())?;
+    apply_patch(&mut template, &fields);
+
+    let template_dir = path.parent().unwrap_or(Path::new("."));
+    let sources = load_sources(&source_files)?;
+
+    let contexts = mailnir_lib::join::build_contexts_lenient(&template, &sources)
+        .map_err(|e| e.to_string())?;
+
+    let context = contexts
+        .into_iter()
+        .nth(entry_index)
+        .ok_or_else(|| format!("entry index {entry_index} out of range"))?
+        .map_err(|e| e.to_string())?;
+
+    let rendered = mailnir_lib::render::render_context(&template, &context, template_dir)
+        .map_err(|e| e.to_string())?;
+
+    Ok(PreviewRenderedEmail {
+        to: rendered.to,
+        cc: rendered.cc,
+        bcc: rendered.bcc,
+        subject: rendered.subject,
+        html_body: rendered.html_body,
+        text_body: rendered.text_body,
+        attachments: rendered
+            .attachments
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect(),
+    })
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 fn smtp_profiles_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
     let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
     Ok(config_dir.join("smtp_profiles.json"))
+}
+
+/// Convert a frontend separator string to a byte for CSV parsing.
+fn parse_separator_override(sep: Option<&str>) -> Option<u8> {
+    match sep {
+        Some("\\t") | Some("\t") => Some(b'\t'),
+        Some(s) if !s.is_empty() => Some(s.as_bytes()[0]),
+        _ => None,
+    }
+}
+
+/// Load all source data files into a namespace→Value map.
+fn load_sources(specs: &[SourceFileSpec]) -> Result<HashMap<String, Value>, String> {
+    let mut sources = HashMap::new();
+    for spec in specs {
+        let path = Path::new(&spec.path);
+        let is_csv = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("csv"));
+        let value = if is_csv {
+            let opts = mailnir_lib::data::CsvOptions {
+                separator: parse_separator_override(spec.separator.as_deref()),
+                encoding: spec.encoding.clone(),
+            };
+            mailnir_lib::data::load_file_csv(path, &opts)
+        } else {
+            mailnir_lib::data::load_file(path)
+        };
+        sources.insert(spec.namespace.clone(), value.map_err(|e| e.to_string())?);
+    }
+    Ok(sources)
+}
+
+/// Overlay current editor field values onto a parsed template.
+fn apply_patch(template: &mut mailnir_lib::template::Template, patch: &TemplatePatch) {
+    template.to = patch.to.clone();
+    template.cc = patch.cc.clone();
+    template.bcc = patch.bcc.clone();
+    template.subject = patch.subject.clone();
+    template.body = patch.body.clone();
+    template.attachments = patch.attachments.clone();
+    template.stylesheet = patch.stylesheet.clone();
+    template.style = patch.style.clone();
+    template.body_format = match patch.body_format.as_deref() {
+        Some("html") => Some(mailnir_lib::template::BodyFormat::Html),
+        Some("text") => Some(mailnir_lib::template::BodyFormat::Text),
+        Some("markdown") => Some(mailnir_lib::template::BodyFormat::Markdown),
+        _ => None,
+    };
+}
+
+/// Convert a ValidationIssue to a human-readable string.
+fn format_issue(issue: &mailnir_lib::ValidationIssue) -> String {
+    use mailnir_lib::validate::JoinFailureDetail;
+    use mailnir_lib::ValidationIssue;
+    match issue {
+        ValidationIssue::UnresolvedVariable { field, reason } => {
+            format!("Unresolved variable in {field}: {reason}")
+        }
+        ValidationIssue::JoinFailure { namespace, detail } => match detail {
+            JoinFailureDetail::MissingMatch => {
+                format!("Join '{namespace}': no match found")
+            }
+            JoinFailureDetail::AmbiguousMatch { match_count } => {
+                format!("Join '{namespace}': {match_count} matches (expected 1)")
+            }
+        },
+        ValidationIssue::InvalidEmail { field, value } => {
+            format!("Invalid email in {field}: \"{value}\"")
+        }
+        ValidationIssue::AttachmentNotFound { path } => {
+            format!("Attachment not found: {}", path.display())
+        }
+        ValidationIssue::RequiredFieldEmpty { field } => {
+            format!("Required field empty: {field}")
+        }
+        ValidationIssue::StylesheetNotFound { path } => {
+            format!("Stylesheet not found: {}", path.display())
+        }
+        ValidationIssue::CssInlineError { reason } => {
+            format!("CSS inlining error: {reason}")
+        }
+    }
 }

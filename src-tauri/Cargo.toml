@@ -28,6 +28,7 @@ thiserror = "2"
 handlebars = "6"
 comrak = "0.50"
 css-inline = { version = "0.14", default-features = false }
+mime_guess = "2"
 keyring = "3"
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync", "macros", "time"] }
 lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls-tls"] }
@@ -39,3 +40,5 @@ tauri-build = { version = "2", features = [] }
 
 [dev-dependencies]
 tempfile = "3"
+reqwest = { version = "0.12", features = ["json"] }
+urlencoding = "2"

@@ -80,7 +80,7 @@ src-tauri/              # Rust backend
   src/
     lib.rs              # Library root — module declarations, Result alias (no Tauri)
     main.rs             # Tauri entry point — mod commands, builder, invoke_handler
-    commands.rs         # IPC commands: parse_template_cmd, preview_csv, smtp CRUD
+    commands.rs         # IPC commands: parse_template_cmd, preview_csv, smtp CRUD, preview_validate, preview_render_entry
     error.rs            # MailnirError enum (thiserror)
     template/
       mod.rs
@@ -107,6 +107,7 @@ src-tauri/              # Rust backend
     phase1_integration.rs
     phase4_integration.rs
     phase5_integration.rs
+    phase8_integration.rs
   fixtures/
     templates/          # minimal, full, anchors, composite_join, html_body, text_body
     data/               # simple.json/yaml/toml, comma/semicolon/pipe/tab.csv, latin1/windows1252.csv
@@ -134,9 +135,18 @@ src/                    # React frontend
     StatusBar/
       index.tsx         # Profile selector, SMTP Settings, Preview, Send buttons
     TemplateEditor/
-      index.tsx         # Phase 7 placeholder
+      index.tsx         # Per-field editors with save, body format selector
+      FieldEditor.tsx   # Single-line CodeMirror editor with Handlebars autocomplete
+      BodyEditor.tsx    # Multi-line CodeMirror editor for body field
+      BodyFormatSelect.tsx  # Body format dropdown (markdown/html/text)
+      handlebarsExtension.ts  # CM6 syntax highlighting + namespace/field autocomplete
     Preview/
-      index.tsx         # Phase 8 placeholder
+      index.tsx         # Preview panel: navigator, metadata, HTML/text tabs, validation errors
+      InstanceNavigator.tsx  # Prev/next through entries with validation warning icons
+      MetadataPanel.tsx # Resolved To/CC/BCC/Subject/Attachments display
+      HtmlPreview.tsx   # Sandboxed iframe srcdoc for rendered HTML
+      TextPreview.tsx   # Plain-text view in scrollable monospace pre
+      ValidationErrors.tsx  # Amber warning box with per-entry issue list
 ```
 
 ## Code Standards
@@ -181,7 +191,7 @@ Do NOT create a single large commit per phase. Do NOT mix refactors with feature
 
 Phases 1–5 are pure Rust backend. Phase 6+ adds UI. Each phase doc has tasks and exit criteria.
 
-**Current phase: 6 — complete.** (Phases 1–6 complete)
+**Current phase: 8 — complete.** (Phases 1–8 complete)
 
 | Phase | Doc | Summary |
 |---|---|---|

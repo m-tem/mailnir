@@ -74,6 +74,29 @@ export interface PreviewRenderedEmail {
 	attachments: string[];
 }
 
+export interface SendResultEntry {
+	entry_index: number;
+	recipient: string;
+	success: boolean;
+	error: string | null;
+}
+
+export interface SendBatchReport {
+	total: number;
+	success_count: number;
+	failure_count: number;
+	results: SendResultEntry[];
+}
+
+export interface SendProgressEvent {
+	completed: number;
+	total: number;
+	entry_index: number;
+	recipient: string;
+	success: boolean;
+	error: string | null;
+}
+
 // ── Command wrappers ──────────────────────────────────────────────────────────
 
 export const parseTemplate = (path: string): Promise<TemplateInfo> =>
@@ -140,3 +163,20 @@ export const previewRenderEntry = (
 		sourceFiles,
 		entryIndex,
 	});
+
+export const sendBatch = (
+	templatePath: string,
+	fields: TemplateFields,
+	sourceFiles: SourceFileSpec[],
+	profileName: string,
+	entryIndices?: number[] | null,
+): Promise<SendBatchReport> =>
+	invoke("send_batch", {
+		templatePath,
+		fields,
+		sourceFiles,
+		profileName,
+		entryIndices: entryIndices ?? null,
+	});
+
+export const cancelSend = (): Promise<void> => invoke("cancel_send");

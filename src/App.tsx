@@ -2,6 +2,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DataPanel, { type SourceState } from "@/components/DataPanel/index";
 import Preview from "@/components/Preview/index";
+import SendDialog from "@/components/SendDialog/SendDialog";
 import SmtpSettingsDialog from "@/components/SmtpSettings/SmtpSettingsDialog";
 import StatusBar from "@/components/StatusBar/index";
 import TemplateEditor from "@/components/TemplateEditor/index";
@@ -65,6 +66,7 @@ export default function App() {
 		null,
 	);
 	const [smtpDialogOpen, setSmtpDialogOpen] = useState(false);
+	const [sendDialogOpen, setSendDialogOpen] = useState(false);
 
 	// ── Preview state ──────────────────────────────────────────────────────────
 	const [previewValidation, setPreviewValidation] =
@@ -442,9 +444,7 @@ export default function App() {
 					onPreview={() => {
 						/* Auto-refresh handles preview; button kept for future manual refresh */
 					}}
-					onSend={() => {
-						/* Phase 9 */
-					}}
+					onSend={() => setSendDialogOpen(true)}
 				/>
 
 				<SmtpSettingsDialog
@@ -453,6 +453,19 @@ export default function App() {
 					profiles={smtpProfiles}
 					onSave={handleSaveProfiles}
 				/>
+
+				{templatePath && templateFields && selectedProfileName && (
+					<SendDialog
+						open={sendDialogOpen}
+						onOpenChange={setSendDialogOpen}
+						templatePath={templatePath}
+						templateFields={templateFields}
+						sourceFileSpecs={buildSourceFileSpecs()}
+						profileName={selectedProfileName}
+						entryCount={previewValidation?.entry_count ?? 0}
+						validationEntries={previewValidation?.entries ?? []}
+					/>
+				)}
 			</div>
 		</TooltipProvider>
 	);

@@ -1,0 +1,7 @@
+[
+  { "class_id": 1, "email": "alice@example.com", "first_name": "Alice" },
+  { "class_id": 2, "email": "bob@example.com",   "first_name": "Bob" },
+  { "class_id": 3, "email": "carol@example.com", "first_name": "Carol" },
+  { "class_id": 1, "email": "dave@example.com",  "first_name": "Dave" },
+  { "class_id": 3, "email": "eve@example.com",   "first_name": "Eve" }
+]

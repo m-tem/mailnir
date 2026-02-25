@@ -1,0 +1,32 @@
+[
+  {
+    "id": 1,
+    "name": "Intro to CS",
+    "coordinator": "prof.smith@university.edu",
+    "students": [
+      { "username": "alice01", "password": "xK9#mP2q" },
+      { "username": "bob02", "password": "vL4$nR7w" },
+      { "username": "carol03", "password": "hT8&jF5s" }
+    ]
+  },
+  {
+    "id": 2,
+    "name": "Data Structures",
+    "coordinator": "prof.jones@university.edu",
+    "students": [
+      { "username": "dave04", "password": "bN3@kQ6y" },
+      { "username": "eve05", "password": "zW1!cX8m" }
+    ]
+  },
+  {
+    "id": 3,
+    "name": "Algorithms",
+    "coordinator": "prof.lee@university.edu",
+    "students": [
+      { "username": "frank06", "password": "pG7%tH2r" },
+      { "username": "grace07", "password": "dJ5^uM4a" },
+      { "username": "heidi08", "password": "fS9*wE3n" },
+      { "username": "ivan09", "password": "qY6&oL1v" }
+    ]
+  }
+]

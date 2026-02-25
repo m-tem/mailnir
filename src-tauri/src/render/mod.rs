@@ -152,11 +152,12 @@ fn apply_css(html: &str, css: Option<&str>) -> crate::Result<String> {
     // Wrap in a <div> because inline_fragment only processes the first
     // top-level element when there are multiple siblings.
     let wrapped = format!("<div>{html}</div>");
-    let inlined = inliner
-        .inline_fragment(&wrapped, css_str)
-        .map_err(|e| MailnirError::CssInline {
-            reason: e.to_string(),
-        })?;
+    let inlined =
+        inliner
+            .inline_fragment(&wrapped, css_str)
+            .map_err(|e| MailnirError::CssInline {
+                reason: e.to_string(),
+            })?;
     // Strip the wrapper <div>…</div> (the opening tag may have gained
     // inline styles if a CSS rule targets `div`).
     let inner = if inlined.starts_with("<div") {

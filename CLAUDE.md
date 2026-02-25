@@ -80,7 +80,7 @@ src-tauri/              # Rust backend
   src/
     lib.rs              # Library root — module declarations, Result alias (no Tauri)
     main.rs             # Tauri entry point — mod commands, builder, invoke_handler
-    commands.rs         # IPC commands: parse_template_cmd, preview_csv, smtp CRUD, preview_validate, preview_render_entry
+    commands.rs         # IPC commands: parse_template_cmd, preview_csv, smtp CRUD, preview_validate, preview_render_entry, send_batch, cancel_send
     error.rs            # MailnirError enum (thiserror)
     template/
       mod.rs
@@ -102,12 +102,13 @@ src-tauri/              # Rust backend
     validate/
       mod.rs            # validate_all, ValidationReport, ValidationIssue — per-entry validation (Phase 4)
     smtp/
-      mod.rs            # SmtpProfile, Encryption, SmtpCredentials, SendReport, send_all (Phase 5)
+      mod.rs            # SmtpProfile, Encryption, SmtpCredentials, SendReport, send_all, send_all_with_progress (Phase 5/9)
   tests/
     phase1_integration.rs
     phase4_integration.rs
     phase5_integration.rs
     phase8_integration.rs
+    phase9_integration.rs
   fixtures/
     templates/          # minimal, full, anchors, composite_join, html_body, text_body
     data/               # simple.json/yaml/toml, comma/semicolon/pipe/tab.csv, latin1/windows1252.csv
@@ -129,6 +130,8 @@ src/                    # React frontend
       index.tsx         # Namespace slot list, "Open a template" placeholder
       SourceSlotRow.tsx # Per-namespace row: file picker, status icon, badges
       CsvConfigPanel.tsx  # Separator/encoding selectors + 5-row preview table
+    SendDialog/
+      SendDialog.tsx    # Confirm → progress → report dialog for batch send
     SmtpSettings/
       SmtpSettingsDialog.tsx  # Profile list/CRUD dialog with inline test
       SmtpProfileForm.tsx     # Add/edit SMTP profile form
@@ -191,7 +194,7 @@ Do NOT create a single large commit per phase. Do NOT mix refactors with feature
 
 Phases 1–5 are pure Rust backend. Phase 6+ adds UI. Each phase doc has tasks and exit criteria.
 
-**Current phase: 8 — complete.** (Phases 1–8 complete)
+**Current phase: 9 — complete.** (Phases 1–9 complete)
 
 | Phase | Doc | Summary |
 |---|---|---|

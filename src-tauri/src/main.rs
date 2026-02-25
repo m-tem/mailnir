@@ -5,6 +5,7 @@ mod commands;
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .manage(commands::SendState::default())
         .invoke_handler(tauri::generate_handler![
             commands::parse_template_cmd,
             commands::preview_csv,
@@ -17,6 +18,8 @@ fn main() {
             commands::save_template,
             commands::preview_validate,
             commands::preview_render_entry,
+            commands::send_batch,
+            commands::cancel_send,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

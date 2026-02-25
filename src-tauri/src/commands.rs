@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -93,6 +95,39 @@ pub struct PreviewRenderedEmail {
     pub html_body: Option<String>,
     pub text_body: String,
     pub attachments: Vec<String>,
+}
+
+/// IPC result for a single sent entry.
+#[derive(Debug, Serialize)]
+pub struct SendResultEntry {
+    pub entry_index: usize,
+    pub recipient: String,
+    pub success: bool,
+    pub error: Option<String>,
+}
+
+/// Final send report returned to the frontend.
+#[derive(Debug, Serialize)]
+pub struct SendBatchReport {
+    pub total: usize,
+    pub success_count: usize,
+    pub failure_count: usize,
+    pub results: Vec<SendResultEntry>,
+}
+
+/// Managed state that tracks an active batch send session.
+pub struct SendState {
+    pub cancel_flag: Arc<AtomicBool>,
+    pub active: Arc<AtomicBool>,
+}
+
+impl Default for SendState {
+    fn default() -> Self {
+        Self {
+            cancel_flag: Arc::new(AtomicBool::new(false)),
+            active: Arc::new(AtomicBool::new(false)),
+        }
+    }
 }
 
 // ── Commands ──────────────────────────────────────────────────────────────────
@@ -439,6 +474,170 @@ pub fn preview_render_entry(
             .map(|p| p.display().to_string())
             .collect(),
     })
+}
+
+/// Send a batch of emails using the full pipeline: parse → join → render → send.
+///
+/// Emits `send-progress` events as each email completes. Supports cancellation
+/// via the managed [`SendState`] and retry of a subset via `entry_indices`.
+#[tauri::command]
+pub async fn send_batch(
+    app: tauri::AppHandle,
+    send_state: tauri::State<'_, SendState>,
+    template_path: String,
+    fields: TemplatePatch,
+    source_files: Vec<SourceFileSpec>,
+    profile_name: String,
+    entry_indices: Option<Vec<usize>>,
+) -> Result<SendBatchReport, String> {
+    // Guard: prevent concurrent sends.
+    if send_state.active.swap(true, Ordering::SeqCst) {
+        return Err("A send operation is already in progress".to_string());
+    }
+    send_state.cancel_flag.store(false, Ordering::SeqCst);
+
+    let result = send_batch_inner(
+        &app,
+        &send_state,
+        &template_path,
+        &fields,
+        &source_files,
+        &profile_name,
+        entry_indices.as_deref(),
+    )
+    .await;
+
+    send_state.active.store(false, Ordering::SeqCst);
+    result
+}
+
+async fn send_batch_inner(
+    app: &tauri::AppHandle,
+    send_state: &SendState,
+    template_path: &str,
+    fields: &TemplatePatch,
+    source_files: &[SourceFileSpec],
+    profile_name: &str,
+    entry_indices: Option<&[usize]>,
+) -> Result<SendBatchReport, String> {
+    use tauri::Emitter;
+
+    // 1. Parse template + apply field overrides.
+    let path = Path::new(template_path);
+    let mut template = mailnir_lib::template::parse_template(path).map_err(|e| e.to_string())?;
+    apply_patch(&mut template, fields);
+    let template_dir = path.parent().unwrap_or(Path::new("."));
+
+    // 2. Load sources.
+    let sources = load_sources(source_files)?;
+
+    // 3. Build contexts (lenient — join failures become per-entry errors).
+    let all_contexts = mailnir_lib::join::build_contexts_lenient(&template, &sources)
+        .map_err(|e| e.to_string())?;
+
+    // 4. Determine which entries to send.
+    let indices: Vec<usize> = match entry_indices {
+        Some(subset) => subset.to_vec(),
+        None => (0..all_contexts.len()).collect(),
+    };
+
+    // 5. Render emails for the selected entries.
+    let mut emails: Vec<mailnir_lib::render::RenderedEmail> = Vec::with_capacity(indices.len());
+    let mut index_map: Vec<usize> = Vec::with_capacity(indices.len());
+    let mut pre_send_failures: Vec<SendResultEntry> = Vec::new();
+
+    for &idx in &indices {
+        let ctx_result = all_contexts
+            .get(idx)
+            .ok_or_else(|| format!("entry index {idx} out of range"))?;
+
+        match ctx_result {
+            Err(e) => {
+                pre_send_failures.push(SendResultEntry {
+                    entry_index: idx,
+                    recipient: String::new(),
+                    success: false,
+                    error: Some(e.to_string()),
+                });
+            }
+            Ok(context) => {
+                match mailnir_lib::render::render_context(&template, context, template_dir) {
+                    Err(e) => {
+                        pre_send_failures.push(SendResultEntry {
+                            entry_index: idx,
+                            recipient: String::new(),
+                            success: false,
+                            error: Some(e.to_string()),
+                        });
+                    }
+                    Ok(rendered) => {
+                        index_map.push(idx);
+                        emails.push(rendered);
+                    }
+                }
+            }
+        }
+    }
+
+    // 6. Load SMTP profile and credentials.
+    let profiles_path = smtp_profiles_path(app)?;
+    let profiles = mailnir_lib::smtp::load_profiles(&profiles_path).map_err(|e| e.to_string())?;
+    let profile = profiles
+        .iter()
+        .find(|p| p.name == profile_name)
+        .ok_or_else(|| format!("profile '{profile_name}' not found"))?
+        .clone();
+    let credentials =
+        mailnir_lib::smtp::retrieve_credential(profile_name).map_err(|e| e.to_string())?;
+
+    // 7. Send with progress events.
+    let cancel = send_state.cancel_flag.clone();
+    let app_handle = app.clone();
+    let total = indices.len();
+
+    let report = mailnir_lib::smtp::send_all_with_progress(
+        &emails,
+        &profile,
+        &credentials,
+        Some(cancel),
+        Some(Arc::new(move |progress| {
+            let _ = app_handle.emit("send-progress", &progress);
+        })),
+    )
+    .await;
+
+    // 8. Map send results back to original entry indices and merge with pre-send failures.
+    let mut results: Vec<SendResultEntry> = pre_send_failures;
+    for r in &report.results {
+        let original_idx = index_map
+            .get(r.entry_index)
+            .copied()
+            .unwrap_or(r.entry_index);
+        results.push(SendResultEntry {
+            entry_index: original_idx,
+            recipient: r.recipient.clone(),
+            success: r.success,
+            error: r.error.clone(),
+        });
+    }
+
+    let success_count = results.iter().filter(|r| r.success).count();
+    let failure_count = results.iter().filter(|r| !r.success).count();
+
+    Ok(SendBatchReport {
+        total,
+        success_count,
+        failure_count,
+        results,
+    })
+}
+
+/// Cancel an in-progress batch send. In-flight emails will complete, but no new
+/// emails will be sent.
+#[tauri::command]
+pub fn cancel_send(send_state: tauri::State<'_, SendState>) -> Result<(), String> {
+    send_state.cancel_flag.store(true, Ordering::SeqCst);
+    Ok(())
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

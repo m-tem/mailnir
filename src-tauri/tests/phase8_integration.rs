@@ -157,15 +157,13 @@ fn test_full_template_renders_all_content() {
     let classes_data =
         mailnir_lib::data::load_file(std::path::Path::new("fixtures/data/classes.json"))
             .expect("classes.json");
-    let inst_data = mailnir_lib::data::load_file(std::path::Path::new(
-        "fixtures/data/instructors_clean.json",
-    ))
-    .expect("instructors_clean.json");
+    let inst_data =
+        mailnir_lib::data::load_file(std::path::Path::new("fixtures/data/instructors_clean.json"))
+            .expect("instructors_clean.json");
 
     let sources = make_sources(&[("classes", classes_data), ("inst", inst_data)]);
 
-    let contexts =
-        build_contexts_lenient(&template, &sources).expect("build_contexts_lenient");
+    let contexts = build_contexts_lenient(&template, &sources).expect("build_contexts_lenient");
     let ctx = contexts
         .into_iter()
         .next()

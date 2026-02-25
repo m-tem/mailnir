@@ -46,6 +46,34 @@ export interface SmtpProfile {
 	parallelism: number;
 }
 
+export interface SourceFileSpec {
+	namespace: string;
+	path: string;
+	separator: string | null;
+	encoding: string | null;
+}
+
+export interface PreviewEntryStatus {
+	entry_index: number;
+	is_valid: boolean;
+	issues: string[];
+}
+
+export interface PreviewValidation {
+	entry_count: number;
+	entries: PreviewEntryStatus[];
+}
+
+export interface PreviewRenderedEmail {
+	to: string;
+	cc: string | null;
+	bcc: string | null;
+	subject: string;
+	html_body: string | null;
+	text_body: string;
+	attachments: string[];
+}
+
 // ── Command wrappers ──────────────────────────────────────────────────────────
 
 export const parseTemplate = (path: string): Promise<TemplateInfo> =>
@@ -92,3 +120,23 @@ export const saveTemplate = (
 	path: string,
 	patch: TemplateFields,
 ): Promise<void> => invoke("save_template", { path, patch });
+
+export const previewValidate = (
+	templatePath: string,
+	fields: TemplateFields,
+	sourceFiles: SourceFileSpec[],
+): Promise<PreviewValidation> =>
+	invoke("preview_validate", { templatePath, fields, sourceFiles });
+
+export const previewRenderEntry = (
+	templatePath: string,
+	fields: TemplateFields,
+	sourceFiles: SourceFileSpec[],
+	entryIndex: number,
+): Promise<PreviewRenderedEmail> =>
+	invoke("preview_render_entry", {
+		templatePath,
+		fields,
+		sourceFiles,
+		entryIndex,
+	});

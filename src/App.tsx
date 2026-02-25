@@ -1,5 +1,5 @@
 import { open } from "@tauri-apps/plugin-dialog";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DataPanel, { type SourceState } from "@/components/DataPanel/index";
 import Preview from "@/components/Preview/index";
 import SmtpSettingsDialog from "@/components/SmtpSettings/SmtpSettingsDialog";
@@ -15,9 +15,14 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import {
 	getDataFields,
 	getSmtpProfiles,
+	type PreviewRenderedEmail,
+	type PreviewValidation,
 	parseTemplate,
 	previewCsv,
+	previewRenderEntry,
+	previewValidate,
 	type SmtpProfile,
+	type SourceFileSpec,
 	saveSmtpProfiles,
 	saveTemplate,
 	type TemplateFields,
@@ -61,6 +66,15 @@ export default function App() {
 	);
 	const [smtpDialogOpen, setSmtpDialogOpen] = useState(false);
 
+	// ── Preview state ──────────────────────────────────────────────────────────
+	const [previewValidation, setPreviewValidation] =
+		useState<PreviewValidation | null>(null);
+	const [previewCurrentIndex, setPreviewCurrentIndex] = useState(0);
+	const [previewRendered, setPreviewRendered] =
+		useState<PreviewRenderedEmail | null>(null);
+	const [previewLoading, setPreviewLoading] = useState(false);
+	const [previewError, setPreviewError] = useState<string | null>(null);
+
 	// ── Derived ─────────────────────────────────────────────────────────────────
 	const namespaces = useMemo(
 		() => templateInfo?.sources.map((s) => s.namespace) ?? [],
@@ -80,6 +94,101 @@ export default function App() {
 			.then(setSmtpProfiles)
 			.catch(() => {});
 	}, []);
+
+	// ── Preview helpers ─────────────────────────────────────────────────────────
+
+	const buildSourceFileSpecs = useCallback((): SourceFileSpec[] => {
+		if (!templateInfo) return [];
+		return templateInfo.sources.map((slot) => {
+			const state = sourcesState[slot.namespace];
+			return {
+				namespace: slot.namespace,
+				path: state?.path ?? "",
+				separator: state?.separatorOverride ?? null,
+				encoding: state?.encodingOverride ?? null,
+			};
+		});
+	}, [templateInfo, sourcesState]);
+
+	// Track current index in a ref so the effect can read the latest value
+	// without re-triggering on navigation.
+	const previewIndexRef = useRef(previewCurrentIndex);
+	previewIndexRef.current = previewCurrentIndex;
+
+	// Auto-refresh preview when inputs change (debounced).
+	useEffect(() => {
+		if (!templatePath || !templateFields || !allSourcesLoaded) {
+			setPreviewValidation(null);
+			setPreviewRendered(null);
+			return;
+		}
+
+		const controller = new AbortController();
+		const timer = setTimeout(async () => {
+			setPreviewLoading(true);
+			setPreviewError(null);
+			try {
+				const specs = buildSourceFileSpecs();
+				const validation = await previewValidate(
+					templatePath,
+					templateFields,
+					specs,
+				);
+				if (controller.signal.aborted) return;
+				setPreviewValidation(validation);
+
+				if (validation.entry_count > 0) {
+					const idx = Math.min(
+						previewIndexRef.current,
+						validation.entry_count - 1,
+					);
+					setPreviewCurrentIndex(idx);
+					const rendered = await previewRenderEntry(
+						templatePath,
+						templateFields,
+						specs,
+						idx,
+					);
+					if (controller.signal.aborted) return;
+					setPreviewRendered(rendered);
+				} else {
+					setPreviewRendered(null);
+				}
+			} catch (err) {
+				if (!controller.signal.aborted) {
+					setPreviewError(String(err));
+				}
+			} finally {
+				if (!controller.signal.aborted) {
+					setPreviewLoading(false);
+				}
+			}
+		}, 300);
+
+		return () => {
+			clearTimeout(timer);
+			controller.abort();
+		};
+	}, [templatePath, templateFields, allSourcesLoaded, buildSourceFileSpecs]);
+
+	const handlePreviewNavigate = async (index: number) => {
+		if (!templatePath || !templateFields || !previewValidation) return;
+		if (index < 0 || index >= previewValidation.entry_count) return;
+		setPreviewCurrentIndex(index);
+		try {
+			const specs = buildSourceFileSpecs();
+			const rendered = await previewRenderEntry(
+				templatePath,
+				templateFields,
+				specs,
+				index,
+			);
+			setPreviewRendered(rendered);
+		} catch (err) {
+			setPreviewError(String(err));
+			setPreviewRendered(null);
+		}
+	};
 
 	// ── Handlers ────────────────────────────────────────────────────────────────
 
@@ -101,6 +210,10 @@ export default function App() {
 			setNamespaceFields({});
 			setSaveStatus("idle");
 			setSaveError(null);
+			setPreviewValidation(null);
+			setPreviewRendered(null);
+			setPreviewCurrentIndex(0);
+			setPreviewError(null);
 		} catch (err) {
 			setTemplateError(String(err));
 		}
@@ -306,9 +419,16 @@ export default function App() {
 
 					<ResizableHandle withHandle />
 
-					{/* Preview (placeholder) */}
+					{/* Preview */}
 					<ResizablePanel defaultSize={30} minSize={10}>
-						<Preview />
+						<Preview
+							validation={previewValidation}
+							currentIndex={previewCurrentIndex}
+							rendered={previewRendered}
+							loading={previewLoading}
+							error={previewError}
+							onNavigate={handlePreviewNavigate}
+						/>
 					</ResizablePanel>
 				</ResizablePanelGroup>
 
@@ -320,7 +440,7 @@ export default function App() {
 					onSmtpSettings={() => setSmtpDialogOpen(true)}
 					allSourcesLoaded={allSourcesLoaded}
 					onPreview={() => {
-						/* Phase 8 */
+						/* Auto-refresh handles preview; button kept for future manual refresh */
 					}}
 					onSend={() => {
 						/* Phase 9 */

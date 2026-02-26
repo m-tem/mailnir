@@ -1,0 +1,11 @@
+sources:
+  recipient:
+    primary: true
+    form: true
+
+to: "{{recipient.email}}"
+subject: "Hello {{recipient.name}}"
+body: |
+  Hi {{recipient.name}},
+
+  This is a one-off message for you.

@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/tooltip";
 import type { SourceSlot } from "@/lib/ipc";
 import CsvConfigPanel from "./CsvConfigPanel";
+import FormFieldsPanel from "./FormFieldsPanel";
 
 interface Props {
 	slot: SourceSlot;
@@ -16,16 +17,25 @@ interface Props {
 	onFileSelect: (namespace: string, path: string) => void;
 	onSeparatorChange: (namespace: string, sep: string) => void;
 	onEncodingChange: (namespace: string, enc: string) => void;
+	onFormValueChange: (namespace: string, field: string, value: string) => void;
 }
 
-function StatusIcon({ state }: { state: SourceState | undefined }) {
+function StatusIcon({
+	state,
+	isForm,
+}: {
+	state: SourceState | undefined;
+	isForm: boolean;
+}) {
 	if (!state) {
 		return (
 			<Tooltip>
 				<TooltipTrigger asChild>
 					<span className="text-base leading-none text-amber-500">⚠</span>
 				</TooltipTrigger>
-				<TooltipContent>No file loaded</TooltipContent>
+				<TooltipContent>
+					{isForm ? "Form not initialized" : "No file loaded"}
+				</TooltipContent>
 			</Tooltip>
 		);
 	}
@@ -44,7 +54,7 @@ function StatusIcon({ state }: { state: SourceState | undefined }) {
 			<TooltipTrigger asChild>
 				<span className="text-base leading-none text-green-600">✓</span>
 			</TooltipTrigger>
-			<TooltipContent>Loaded</TooltipContent>
+			<TooltipContent>{isForm ? "Form" : "Loaded"}</TooltipContent>
 		</Tooltip>
 	);
 }
@@ -55,6 +65,7 @@ export default function SourceSlotRow({
 	onFileSelect,
 	onSeparatorChange,
 	onEncodingChange,
+	onFormValueChange,
 }: Props) {
 	const handleSelect = async () => {
 		const selected = await open({
@@ -76,7 +87,7 @@ export default function SourceSlotRow({
 	return (
 		<div className="px-3 py-2">
 			<div className="flex items-center gap-2">
-				<StatusIcon state={state} />
+				<StatusIcon state={state} isForm={slot.is_form} />
 				<span className="flex-1 truncate font-mono text-sm font-medium">
 					{slot.namespace}
 				</span>
@@ -85,27 +96,35 @@ export default function SourceSlotRow({
 						primary
 					</Badge>
 				)}
+				{slot.is_form && (
+					<Badge variant="outline" className="text-xs">
+						form
+					</Badge>
+				)}
 				{slot.has_join && !slot.is_primary && (
 					<Badge variant="outline" className="text-xs">
 						joined
 					</Badge>
 				)}
-				{!slot.is_primary && !slot.has_join && (
+				{!slot.is_primary && !slot.has_join && !slot.is_form && (
 					<Badge variant="outline" className="text-xs text-muted-foreground">
 						global
 					</Badge>
 				)}
-				<Button
-					size="sm"
-					variant="ghost"
-					className="h-6 px-2 text-xs"
-					onClick={handleSelect}
-				>
-					{state ? "Change" : "Load"}
-				</Button>
+				{!slot.is_form && (
+					<Button
+						size="sm"
+						variant="ghost"
+						className="h-6 px-2 text-xs"
+						onClick={handleSelect}
+					>
+						{state ? "Change" : "Load"}
+					</Button>
+				)}
 			</div>
 
-			{state && !state.error && (
+			{/* File source: show filename */}
+			{!slot.is_form && state && !state.error && (
 				<div className="mt-0.5 pl-5 text-xs text-muted-foreground">
 					{state.path.split("/").pop()}
 				</div>
@@ -123,7 +142,21 @@ export default function SourceSlotRow({
 				</div>
 			)}
 
-			{isCsv && state?.csvPreview && (
+			{/* Form source: show form fields */}
+			{slot.is_form && state?.formFields && state.formValues && (
+				<div className="pl-5">
+					<FormFieldsPanel
+						fields={state.formFields}
+						values={state.formValues}
+						onValueChange={(field, value) =>
+							onFormValueChange(slot.namespace, field, value)
+						}
+					/>
+				</div>
+			)}
+
+			{/* File source: CSV config */}
+			{!slot.is_form && isCsv && state?.csvPreview && (
 				<div className="pl-5">
 					<CsvConfigPanel
 						preview={state.csvPreview}

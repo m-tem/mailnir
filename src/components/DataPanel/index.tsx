@@ -9,6 +9,8 @@ export interface SourceState {
 	separatorOverride: string | null;
 	encodingOverride: string | null;
 	error: string | null;
+	formFields: string[] | null;
+	formValues: Record<string, string> | null;
 }
 
 interface Props {
@@ -17,6 +19,7 @@ interface Props {
 	onFileSelect: (namespace: string, path: string) => void;
 	onSeparatorChange: (namespace: string, sep: string) => void;
 	onEncodingChange: (namespace: string, enc: string) => void;
+	onFormValueChange: (namespace: string, field: string, value: string) => void;
 }
 
 export default function DataPanel({
@@ -25,6 +28,7 @@ export default function DataPanel({
 	onFileSelect,
 	onSeparatorChange,
 	onEncodingChange,
+	onFormValueChange,
 }: Props) {
 	if (!templateInfo) {
 		return (
@@ -51,6 +55,7 @@ export default function DataPanel({
 							onFileSelect={onFileSelect}
 							onSeparatorChange={onSeparatorChange}
 							onEncodingChange={onEncodingChange}
+							onFormValueChange={onFormValueChange}
 						/>
 					</div>
 				))}

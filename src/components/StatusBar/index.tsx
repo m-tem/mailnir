@@ -14,7 +14,8 @@ interface Props {
 	onProfileChange: (name: string) => void;
 	onSmtpSettings: () => void;
 	allSourcesLoaded: boolean;
-	onPreview: () => void;
+	previewVisible: boolean;
+	onTogglePreview: () => void;
 	onSend: () => void;
 }
 
@@ -24,7 +25,8 @@ export default function StatusBar({
 	onProfileChange,
 	onSmtpSettings,
 	allSourcesLoaded,
-	onPreview,
+	previewVisible,
+	onTogglePreview,
 	onSend,
 }: Props) {
 	return (
@@ -59,10 +61,9 @@ export default function StatusBar({
 
 			<Button
 				size="sm"
-				variant="outline"
+				variant={previewVisible ? "default" : "outline"}
 				className="h-7 text-xs"
-				disabled={!allSourcesLoaded}
-				onClick={onPreview}
+				onClick={onTogglePreview}
 			>
 				Preview
 			</Button>

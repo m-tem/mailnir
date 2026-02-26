@@ -9,6 +9,7 @@ export interface SourceSlot {
 	is_primary: boolean;
 	has_join: boolean;
 	join_keys: string[];
+	is_form: boolean;
 }
 
 export interface TemplateFields {
@@ -52,6 +53,7 @@ export interface SourceFileSpec {
 	path: string;
 	separator: string | null;
 	encoding: string | null;
+	form_data: Record<string, string> | null;
 }
 
 export interface PreviewEntryStatus {
@@ -139,6 +141,13 @@ export const testSmtpConnection = (
 
 export const getDataFields = (path: string): Promise<string[]> =>
 	invoke("get_data_fields", { path });
+
+export const getFormFields = (
+	templatePath: string,
+	fields: TemplateFields,
+	namespace: string,
+): Promise<string[]> =>
+	invoke("get_form_fields", { templatePath, fields, namespace });
 
 export const saveTemplate = (
 	path: string,

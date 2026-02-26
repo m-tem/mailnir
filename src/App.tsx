@@ -15,6 +15,7 @@ import {
 import { TooltipProvider } from "@/components/ui/tooltip";
 import {
 	getDataFields,
+	getFormFields,
 	getSmtpProfiles,
 	type PreviewRenderedEmail,
 	type PreviewValidation,
@@ -67,6 +68,7 @@ export default function App() {
 	);
 	const [smtpDialogOpen, setSmtpDialogOpen] = useState(false);
 	const [sendDialogOpen, setSendDialogOpen] = useState(false);
+	const [previewVisible, setPreviewVisible] = useState(true);
 
 	// ── Preview state ──────────────────────────────────────────────────────────
 	const [previewValidation, setPreviewValidation] =
@@ -108,6 +110,7 @@ export default function App() {
 				path: state?.path ?? "",
 				separator: state?.separatorOverride ?? null,
 				encoding: state?.encodingOverride ?? null,
+				form_data: state?.formValues ?? null,
 			};
 		});
 	}, [templateInfo, sourcesState]);
@@ -208,8 +211,34 @@ export default function App() {
 			setTemplateInfo(info);
 			setTemplateFields(info.fields);
 			setTemplateLoadId((n) => n + 1);
-			setSourcesState({});
-			setNamespaceFields({});
+
+			// Initialize form sources immediately with inferred fields.
+			const initialSources: Record<string, SourceState> = {};
+			const initialFields: Record<string, string[]> = {};
+			for (const slot of info.sources) {
+				if (slot.is_form) {
+					const fields = await getFormFields(
+						selected,
+						info.fields,
+						slot.namespace,
+					);
+					const values: Record<string, string> = {};
+					for (const f of fields) values[f] = "";
+					initialSources[slot.namespace] = {
+						path: "",
+						csvPreview: null,
+						separatorOverride: null,
+						encodingOverride: null,
+						error: null,
+						formFields: fields,
+						formValues: values,
+					};
+					initialFields[slot.namespace] = fields;
+				}
+			}
+			setSourcesState(initialSources);
+			setNamespaceFields(initialFields);
+
 			setSaveStatus("idle");
 			setSaveError(null);
 			setPreviewValidation(null);
@@ -234,6 +263,8 @@ export default function App() {
 						separatorOverride: null,
 						encodingOverride: null,
 						error: null,
+						formFields: null,
+						formValues: null,
 					},
 				}));
 				setNamespaceFields((prev) => ({
@@ -249,6 +280,8 @@ export default function App() {
 						separatorOverride: null,
 						encodingOverride: null,
 						error: String(err),
+						formFields: null,
+						formValues: null,
 					},
 				}));
 			}
@@ -262,6 +295,8 @@ export default function App() {
 					separatorOverride: null,
 					encodingOverride: null,
 					error: null,
+					formFields: null,
+					formValues: null,
 				},
 			}));
 			try {
@@ -342,6 +377,71 @@ export default function App() {
 		}
 	};
 
+	const handleFormValueChange = (
+		namespace: string,
+		field: string,
+		value: string,
+	) => {
+		setSourcesState((prev) => {
+			const state = prev[namespace];
+			if (!state?.formValues) return prev;
+			return {
+				...prev,
+				[namespace]: {
+					...state,
+					formValues: { ...state.formValues, [field]: value },
+				},
+			};
+		});
+	};
+
+	// Re-infer form fields when template fields change.
+	useEffect(() => {
+		if (!templatePath || !templateFields || !templateInfo) return;
+		const formSources = templateInfo.sources.filter((s) => s.is_form);
+		if (formSources.length === 0) return;
+
+		const controller = new AbortController();
+		const timer = setTimeout(async () => {
+			for (const slot of formSources) {
+				try {
+					const fields = await getFormFields(
+						templatePath,
+						templateFields,
+						slot.namespace,
+					);
+					if (controller.signal.aborted) return;
+					setSourcesState((prev) => {
+						const state = prev[slot.namespace];
+						if (!state) return prev;
+						const oldValues = state.formValues ?? {};
+						const newValues: Record<string, string> = {};
+						for (const f of fields) newValues[f] = oldValues[f] ?? "";
+						return {
+							...prev,
+							[slot.namespace]: {
+								...state,
+								formFields: fields,
+								formValues: newValues,
+							},
+						};
+					});
+					setNamespaceFields((prev) => ({
+						...prev,
+						[slot.namespace]: fields,
+					}));
+				} catch {
+					// Non-critical: field inference failure doesn't block anything
+				}
+			}
+		}, 500);
+
+		return () => {
+			clearTimeout(timer);
+			controller.abort();
+		};
+	}, [templatePath, templateFields, templateInfo]);
+
 	const handleFieldChange = (
 		field: keyof TemplateFields,
 		value: string | null,
@@ -399,6 +499,7 @@ export default function App() {
 							onFileSelect={handleFileSelect}
 							onSeparatorChange={handleSeparatorChange}
 							onEncodingChange={handleEncodingChange}
+							onFormValueChange={handleFormValueChange}
 						/>
 					</ResizablePanel>
 
@@ -419,19 +520,23 @@ export default function App() {
 						/>
 					</ResizablePanel>
 
-					<ResizableHandle withHandle />
+					{previewVisible && (
+						<>
+							<ResizableHandle withHandle />
 
-					{/* Preview */}
-					<ResizablePanel defaultSize={30} minSize={10}>
-						<Preview
-							validation={previewValidation}
-							currentIndex={previewCurrentIndex}
-							rendered={previewRendered}
-							loading={previewLoading}
-							error={previewError}
-							onNavigate={handlePreviewNavigate}
-						/>
-					</ResizablePanel>
+							{/* Preview */}
+							<ResizablePanel defaultSize={30} minSize={10}>
+								<Preview
+									validation={previewValidation}
+									currentIndex={previewCurrentIndex}
+									rendered={previewRendered}
+									loading={previewLoading}
+									error={previewError}
+									onNavigate={handlePreviewNavigate}
+								/>
+							</ResizablePanel>
+						</>
+					)}
 				</ResizablePanelGroup>
 
 				{/* Status bar */}
@@ -441,9 +546,8 @@ export default function App() {
 					onProfileChange={setSelectedProfileName}
 					onSmtpSettings={() => setSmtpDialogOpen(true)}
 					allSourcesLoaded={allSourcesLoaded}
-					onPreview={() => {
-						/* Auto-refresh handles preview; button kept for future manual refresh */
-					}}
+					previewVisible={previewVisible}
+					onTogglePreview={() => setPreviewVisible((v) => !v)}
 					onSend={() => setSendDialogOpen(true)}
 				/>
 

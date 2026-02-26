@@ -5,8 +5,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-
-type BodyFormat = "markdown" | "html" | "text";
+import type { BodyFormat } from "@/lib/ipc";
 
 interface Props {
 	value: BodyFormat | null;

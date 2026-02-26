@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 
 // ── Types (mirror Rust command.rs structs) ────────────────────────────────────
 
+export type BodyFormat = "markdown" | "html" | "text";
+
 export interface SourceSlot {
 	namespace: string;
 	is_primary: boolean;
@@ -16,8 +18,7 @@ export interface TemplateFields {
 	subject: string;
 	body: string;
 	attachments: string | null;
-	/** "markdown" | "html" | "text" | null (null = absent from YAML = default markdown) */
-	body_format: "markdown" | "html" | "text" | null;
+	body_format: BodyFormat | null;
 	stylesheet: string | null;
 	style: string | null;
 }

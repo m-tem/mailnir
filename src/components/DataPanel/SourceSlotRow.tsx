@@ -136,9 +136,9 @@ export default function SourceSlotRow({
 				</div>
 			)}
 
-			{slot.has_join && slot.join_keys.length > 0 && (
+			{slot.has_join && Object.keys(slot.join).length > 0 && (
 				<div className="mt-0.5 pl-5 text-xs text-muted-foreground">
-					join: {slot.join_keys.join(", ")}
+					join: {Object.keys(slot.join).join(", ")}
 				</div>
 			)}
 

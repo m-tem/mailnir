@@ -14,7 +14,8 @@ pub struct SourceSlot {
     pub namespace: String,
     pub is_primary: bool,
     pub has_join: bool,
-    pub join_keys: Vec<String>,
+    pub join: HashMap<String, String>,
+    pub is_many: bool,
     pub is_form: bool,
 }
 
@@ -157,20 +158,13 @@ pub fn parse_template_cmd(path: String) -> Result<TemplateInfo, String> {
         .sources
         .iter()
         .map(|(name, cfg)| {
-            let join_keys = cfg
-                .join
-                .as_ref()
-                .map(|j| {
-                    let mut keys: Vec<String> = j.keys().cloned().collect();
-                    keys.sort();
-                    keys
-                })
-                .unwrap_or_default();
+            let join = cfg.join.clone().unwrap_or_default();
             SourceSlot {
                 namespace: name.clone(),
                 is_primary: cfg.primary == Some(true),
                 has_join: cfg.join.is_some(),
-                join_keys,
+                join,
+                is_many: cfg.many == Some(true),
                 is_form: cfg.form == Some(true),
             }
         })
@@ -362,19 +356,34 @@ pub fn get_form_fields(
     ))
 }
 
-/// Overwrite the editable fields of a template YAML file, preserving `sources`
-/// and any other keys not managed by the editor.
+/// Overwrite the editable fields of a template YAML file.
 ///
-/// Uses a serde_yaml::Value read-modify-write so the sources block is
-/// preserved verbatim. YAML anchors are expanded on write (acceptable trade-off
-/// for Phase 7).
+/// When `sources` is `None`, the existing sources block is preserved verbatim.
+/// When `sources` is `Some(...)`, the sources block is rebuilt from the specs
+/// after validation.
+///
+/// Uses a serde_yaml::Value read-modify-write. YAML anchors are expanded on
+/// write (acceptable trade-off for Phase 7).
 #[tauri::command]
-pub fn save_template(path: String, patch: TemplatePatch) -> Result<(), String> {
+pub fn save_template(
+    path: String,
+    patch: TemplatePatch,
+    sources: Option<Vec<SourceSpec>>,
+) -> Result<(), String> {
     let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
     let mut doc: serde_yaml::Value = serde_yaml::from_str(&content).map_err(|e| e.to_string())?;
     let map = doc
         .as_mapping_mut()
         .ok_or_else(|| "template root is not a YAML mapping".to_string())?;
+
+    // Rebuild sources block if provided.
+    if let Some(specs) = &sources {
+        validate_source_specs(specs)?;
+        map.insert(
+            serde_yaml::Value::String("sources".into()),
+            serde_yaml::Value::Mapping(build_sources_yaml(specs)),
+        );
+    }
 
     // Helper: upsert a string key in the mapping.
     macro_rules! set_str {
@@ -440,51 +449,12 @@ pub fn create_template(
     sources: Vec<SourceSpec>,
     patch: TemplatePatch,
 ) -> Result<(), String> {
-    let mut doc = serde_yaml::Mapping::new();
+    validate_source_specs(&sources)?;
 
-    // Build sources mapping.
-    let mut sources_map = serde_yaml::Mapping::new();
-    for spec in &sources {
-        let mut source_cfg = serde_yaml::Mapping::new();
-        if spec.primary == Some(true) {
-            source_cfg.insert(
-                serde_yaml::Value::String("primary".into()),
-                serde_yaml::Value::Bool(true),
-            );
-        }
-        if let Some(join) = &spec.join {
-            let mut join_map = serde_yaml::Mapping::new();
-            for (k, v) in join {
-                join_map.insert(
-                    serde_yaml::Value::String(k.clone()),
-                    serde_yaml::Value::String(v.clone()),
-                );
-            }
-            source_cfg.insert(
-                serde_yaml::Value::String("join".into()),
-                serde_yaml::Value::Mapping(join_map),
-            );
-        }
-        if spec.many == Some(true) {
-            source_cfg.insert(
-                serde_yaml::Value::String("many".into()),
-                serde_yaml::Value::Bool(true),
-            );
-        }
-        if spec.form == Some(true) {
-            source_cfg.insert(
-                serde_yaml::Value::String("form".into()),
-                serde_yaml::Value::Bool(true),
-            );
-        }
-        sources_map.insert(
-            serde_yaml::Value::String(spec.namespace.clone()),
-            serde_yaml::Value::Mapping(source_cfg),
-        );
-    }
+    let mut doc = serde_yaml::Mapping::new();
     doc.insert(
         serde_yaml::Value::String("sources".into()),
-        serde_yaml::Value::Mapping(sources_map),
+        serde_yaml::Value::Mapping(build_sources_yaml(&sources)),
     );
 
     // Required fields.
@@ -824,6 +794,84 @@ fn load_sources(specs: &[SourceFileSpec]) -> Result<HashMap<String, Value>, Stri
         sources.insert(spec.namespace.clone(), value);
     }
     Ok(sources)
+}
+
+/// Build a serde_yaml sources mapping from a list of SourceSpecs.
+fn build_sources_yaml(specs: &[SourceSpec]) -> serde_yaml::Mapping {
+    let mut sources_map = serde_yaml::Mapping::new();
+    for spec in specs {
+        let mut source_cfg = serde_yaml::Mapping::new();
+        if spec.primary == Some(true) {
+            source_cfg.insert(
+                serde_yaml::Value::String("primary".into()),
+                serde_yaml::Value::Bool(true),
+            );
+        }
+        if let Some(join) = &spec.join {
+            if !join.is_empty() {
+                let mut join_map = serde_yaml::Mapping::new();
+                for (k, v) in join {
+                    join_map.insert(
+                        serde_yaml::Value::String(k.clone()),
+                        serde_yaml::Value::String(v.clone()),
+                    );
+                }
+                source_cfg.insert(
+                    serde_yaml::Value::String("join".into()),
+                    serde_yaml::Value::Mapping(join_map),
+                );
+            }
+        }
+        if spec.many == Some(true) {
+            source_cfg.insert(
+                serde_yaml::Value::String("many".into()),
+                serde_yaml::Value::Bool(true),
+            );
+        }
+        if spec.form == Some(true) {
+            source_cfg.insert(
+                serde_yaml::Value::String("form".into()),
+                serde_yaml::Value::Bool(true),
+            );
+        }
+        sources_map.insert(
+            serde_yaml::Value::String(spec.namespace.clone()),
+            serde_yaml::Value::Mapping(source_cfg),
+        );
+    }
+    sources_map
+}
+
+/// Validate source specs by building a temporary Template and calling validate_sources.
+fn validate_source_specs(specs: &[SourceSpec]) -> Result<(), String> {
+    use mailnir_lib::template::{SourceConfig, Template};
+    let sources: HashMap<String, SourceConfig> = specs
+        .iter()
+        .map(|s| {
+            (
+                s.namespace.clone(),
+                SourceConfig {
+                    primary: s.primary,
+                    join: s.join.clone(),
+                    many: s.many,
+                    form: s.form,
+                },
+            )
+        })
+        .collect();
+    let template = Template {
+        sources,
+        to: String::new(),
+        subject: String::new(),
+        body: String::new(),
+        cc: None,
+        bcc: None,
+        attachments: None,
+        body_format: None,
+        stylesheet: None,
+        style: None,
+    };
+    mailnir_lib::template::validate_sources(&template).map_err(|e| e.to_string())
 }
 
 /// Overlay current editor field values onto a parsed template.

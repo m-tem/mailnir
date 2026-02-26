@@ -12,32 +12,7 @@ pub fn load_json(path: &Path) -> crate::Result<Value> {
             path: path.to_path_buf(),
             source,
         })?;
-    normalize_shape(path, value)
-}
-
-fn normalize_shape(path: &Path, value: Value) -> crate::Result<Value> {
-    match value {
-        Value::Array(_) => Ok(value),
-        Value::Object(_) => Ok(Value::Array(vec![value])),
-        other => Err(crate::MailnirError::InvalidDataShape {
-            path: path.to_path_buf(),
-            message: format!(
-                "expected array or object at root, got {}",
-                value_type_name(&other)
-            ),
-        }),
-    }
-}
-
-fn value_type_name(v: &Value) -> &'static str {
-    match v {
-        Value::Null => "null",
-        Value::Bool(_) => "bool",
-        Value::Number(_) => "number",
-        Value::String(_) => "string",
-        Value::Array(_) => "array",
-        Value::Object(_) => "object",
-    }
+    super::normalize_shape(path, value)
 }
 
 #[cfg(test)]

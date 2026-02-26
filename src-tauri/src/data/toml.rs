@@ -35,41 +35,21 @@ fn toml_to_json(value: toml::Value) -> Value {
     }
 }
 
+/// TOML-specific normalization: unwrap single-key tables whose value is an
+/// array of objects (the shape produced by `[[entry]]` syntax), then fall
+/// through to the shared normalize_shape.
 fn normalize_shape(path: &Path, value: Value) -> crate::Result<Value> {
-    match &value {
-        Value::Array(_) => Ok(value),
-        Value::Object(map) => {
-            // TOML files often use [[entry]] which deserializes as a table containing an array.
-            // If the root object has exactly one key and its value is an array of objects, unwrap it.
-            if map.len() == 1 {
-                let (_, inner) = map.iter().next().unwrap();
-                if let Value::Array(arr) = inner {
-                    if arr.iter().all(|v| v.is_object()) {
-                        return Ok(inner.clone());
-                    }
+    if let Value::Object(ref map) = value {
+        if map.len() == 1 {
+            let (_, inner) = map.iter().next().unwrap();
+            if let Value::Array(arr) = inner {
+                if arr.iter().all(|v| v.is_object()) {
+                    return Ok(inner.clone());
                 }
             }
-            Ok(Value::Array(vec![value]))
         }
-        _ => Err(crate::MailnirError::InvalidDataShape {
-            path: path.to_path_buf(),
-            message: format!(
-                "expected array or object at root, got {}",
-                value_type_name(&value)
-            ),
-        }),
     }
-}
-
-fn value_type_name(v: &Value) -> &'static str {
-    match v {
-        Value::Null => "null",
-        Value::Bool(_) => "bool",
-        Value::Number(_) => "number",
-        Value::String(_) => "string",
-        Value::Array(_) => "array",
-        Value::Object(_) => "object",
-    }
+    super::normalize_shape(path, value)
 }
 
 #[cfg(test)]

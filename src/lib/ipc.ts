@@ -48,6 +48,14 @@ export interface SmtpProfile {
 	parallelism: number;
 }
 
+export interface SourceSpec {
+	namespace: string;
+	primary?: boolean;
+	join?: Record<string, string>;
+	many?: boolean;
+	form?: boolean;
+}
+
 export interface SourceFileSpec {
 	namespace: string;
 	path: string;
@@ -148,6 +156,12 @@ export const getFormFields = (
 	namespace: string,
 ): Promise<string[]> =>
 	invoke("get_form_fields", { templatePath, fields, namespace });
+
+export const createTemplate = (
+	path: string,
+	sources: SourceSpec[],
+	patch: TemplateFields,
+): Promise<void> => invoke("create_template", { path, sources, patch });
 
 export const saveTemplate = (
 	path: string,

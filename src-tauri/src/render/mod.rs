@@ -228,6 +228,7 @@ mod tests {
                 primary: Some(true),
                 join: None,
                 many: None,
+                form: None,
             },
         );
         Template {

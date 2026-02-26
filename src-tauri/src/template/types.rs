@@ -14,6 +14,7 @@ pub struct SourceConfig {
     pub primary: Option<bool>,
     pub join: Option<HashMap<String, String>>,
     pub many: Option<bool>,
+    pub form: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]

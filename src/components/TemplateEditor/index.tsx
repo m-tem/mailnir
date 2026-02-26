@@ -100,7 +100,7 @@ export default function TemplateEditor({
 			</div>
 
 			{/* Fields */}
-			<ScrollArea className="flex-1">
+			<ScrollArea className="flex-1 overflow-hidden">
 				<div className="space-y-4 p-4">
 					<FieldEditor
 						label="To"

@@ -8,7 +8,8 @@ export interface SourceSlot {
 	namespace: string;
 	is_primary: boolean;
 	has_join: boolean;
-	join_keys: string[];
+	join: Record<string, string>;
+	is_many: boolean;
 	is_form: boolean;
 }
 
@@ -166,7 +167,9 @@ export const createTemplate = (
 export const saveTemplate = (
 	path: string,
 	patch: TemplateFields,
-): Promise<void> => invoke("save_template", { path, patch });
+	sources?: SourceSpec[] | null,
+): Promise<void> =>
+	invoke("save_template", { path, patch, sources: sources ?? null });
 
 export const previewValidate = (
 	templatePath: string,

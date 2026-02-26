@@ -15,6 +15,7 @@ fn main() {
             commands::delete_smtp_credential,
             commands::test_smtp_connection,
             commands::get_data_fields,
+            commands::get_form_fields,
             commands::save_template,
             commands::preview_validate,
             commands::preview_render_entry,

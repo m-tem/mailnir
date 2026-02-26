@@ -15,6 +15,7 @@ pub struct SourceSlot {
     pub is_primary: bool,
     pub has_join: bool,
     pub join_keys: Vec<String>,
+    pub is_form: bool,
 }
 
 /// Editable template field values, returned on parse and sent back on save.
@@ -68,6 +69,7 @@ pub struct SourceFileSpec {
     pub path: String,
     pub separator: Option<String>,
     pub encoding: Option<String>,
+    pub form_data: Option<HashMap<String, String>>,
 }
 
 /// Per-entry summary for the preview validation report.
@@ -159,6 +161,7 @@ pub fn parse_template_cmd(path: String) -> Result<TemplateInfo, String> {
                 is_primary: cfg.primary == Some(true),
                 has_join: cfg.join.is_some(),
                 join_keys,
+                is_form: cfg.form == Some(true),
             }
         })
         .collect();
@@ -328,6 +331,25 @@ pub fn get_data_fields(path: String) -> Result<Vec<String>, String> {
         .unwrap_or_default();
     keys.sort();
     Ok(keys)
+}
+
+/// Infer form field names for a given namespace from template variable references.
+///
+/// Scans all template string fields for `{{namespace.field}}` patterns and
+/// returns a sorted, deduplicated list of field names. Uses the current editor
+/// state (TemplatePatch) so fields update as the user edits the template.
+#[tauri::command]
+pub fn get_form_fields(
+    template_path: String,
+    fields: TemplatePatch,
+    namespace: String,
+) -> Result<Vec<String>, String> {
+    let path = Path::new(&template_path);
+    let mut template = mailnir_lib::template::parse_template(path).map_err(|e| e.to_string())?;
+    apply_patch(&mut template, &fields);
+    Ok(mailnir_lib::template::infer_form_fields(
+        &template, &namespace,
+    ))
 }
 
 /// Overwrite the editable fields of a template YAML file, preserving `sources`
@@ -656,25 +678,34 @@ fn parse_separator_override(sep: Option<&str>) -> Option<u8> {
     }
 }
 
-/// Load all source data files into a namespace→Value map.
+/// Load all source data files (or form data) into a namespace→Value map.
 fn load_sources(specs: &[SourceFileSpec]) -> Result<HashMap<String, Value>, String> {
     let mut sources = HashMap::new();
     for spec in specs {
-        let path = Path::new(&spec.path);
-        let is_csv = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("csv"));
-        let value = if is_csv {
-            let opts = mailnir_lib::data::CsvOptions {
-                separator: parse_separator_override(spec.separator.as_deref()),
-                encoding: spec.encoding.clone(),
-            };
-            mailnir_lib::data::load_file_csv(path, &opts)
+        let value = if let Some(form_data) = &spec.form_data {
+            let obj: serde_json::Map<String, Value> = form_data
+                .iter()
+                .map(|(k, v)| (k.clone(), Value::String(v.clone())))
+                .collect();
+            Value::Array(vec![Value::Object(obj)])
         } else {
-            mailnir_lib::data::load_file(path)
+            let path = Path::new(&spec.path);
+            let is_csv = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("csv"));
+            if is_csv {
+                let opts = mailnir_lib::data::CsvOptions {
+                    separator: parse_separator_override(spec.separator.as_deref()),
+                    encoding: spec.encoding.clone(),
+                };
+                mailnir_lib::data::load_file_csv(path, &opts)
+            } else {
+                mailnir_lib::data::load_file(path)
+            }
+            .map_err(|e| e.to_string())?
         };
-        sources.insert(spec.namespace.clone(), value.map_err(|e| e.to_string())?);
+        sources.insert(spec.namespace.clone(), value);
     }
     Ok(sources)
 }

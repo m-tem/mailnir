@@ -1,4 +1,4 @@
-import { open } from "@tauri-apps/plugin-dialog";
+import { confirm, open, save } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DataPanel, { type SourceState } from "@/components/DataPanel/index";
 import Preview from "@/components/Preview/index";
@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/resizable";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import {
+	createTemplate,
 	getDataFields,
 	getFormFields,
 	getSmtpProfiles,
@@ -25,6 +26,7 @@ import {
 	previewValidate,
 	type SmtpProfile,
 	type SourceFileSpec,
+	type SourceSpec,
 	saveSmtpProfiles,
 	saveTemplate,
 	type TemplateFields,
@@ -45,6 +47,9 @@ export default function App() {
 	);
 	/** Incremented on every successful template open to force editor remount. */
 	const [templateLoadId, setTemplateLoadId] = useState(0);
+
+	/** True when template fields have been modified since last save/open/new. */
+	const [isDirty, setIsDirty] = useState(false);
 
 	// ── Source loading state ────────────────────────────────────────────────────
 	const [sourcesState, setSourcesState] = useState<Record<string, SourceState>>(
@@ -197,7 +202,66 @@ export default function App() {
 
 	// ── Handlers ────────────────────────────────────────────────────────────────
 
+	/** Returns true if safe to proceed (no unsaved changes, or user confirmed discard). */
+	const confirmDiscardChanges = async (): Promise<boolean> => {
+		if (!isDirty) return true;
+		return confirm("You have unsaved changes. Do you want to discard them?", {
+			title: "Unsaved Changes",
+			kind: "warning",
+			okLabel: "Discard",
+			cancelLabel: "Cancel",
+		});
+	};
+
+	const resetState = () => {
+		setSourcesState({});
+		setNamespaceFields({});
+		setSaveStatus("idle");
+		setSaveError(null);
+		setIsDirty(false);
+		setTemplateError(null);
+		setPreviewValidation(null);
+		setPreviewRendered(null);
+		setPreviewCurrentIndex(0);
+		setPreviewError(null);
+	};
+
+	const handleNewTemplate = async () => {
+		if (!(await confirmDiscardChanges())) return;
+
+		const defaultFields: TemplateFields = {
+			to: "",
+			cc: null,
+			bcc: null,
+			subject: "",
+			body: "",
+			attachments: null,
+			body_format: null,
+			stylesheet: null,
+			style: null,
+		};
+
+		setTemplatePath(null);
+		setTemplateInfo({
+			path: "",
+			sources: [
+				{
+					namespace: "data",
+					is_primary: true,
+					has_join: false,
+					join_keys: [],
+					is_form: false,
+				},
+			],
+			fields: defaultFields,
+		});
+		setTemplateFields(defaultFields);
+		setTemplateLoadId((n) => n + 1);
+		resetState();
+	};
+
 	const handleOpenTemplate = async () => {
+		if (!(await confirmDiscardChanges())) return;
 		const selected = await open({
 			multiple: false,
 			filters: [{ name: "Mailnir Template", extensions: ["yml", "yaml"] }],
@@ -241,6 +305,7 @@ export default function App() {
 
 			setSaveStatus("idle");
 			setSaveError(null);
+			setIsDirty(false);
 			setPreviewValidation(null);
 			setPreviewRendered(null);
 			setPreviewCurrentIndex(0);
@@ -448,15 +513,59 @@ export default function App() {
 	) => {
 		setTemplateFields((prev) => (prev ? { ...prev, [field]: value } : prev));
 		setSaveStatus("idle");
+		setIsDirty(true);
 	};
 
 	const handleSaveTemplate = async () => {
-		if (!templatePath || !templateFields) return;
+		if (!templateFields) return;
+
+		// "Save As" flow for new (unsaved) templates.
+		if (!templatePath) {
+			const savePath = await save({
+				title: "Save New Template",
+				filters: [{ name: "Mailnir Template", extensions: ["yml", "yaml"] }],
+				defaultPath: "untitled.mailnir.yml",
+			});
+			if (!savePath) return;
+
+			const finalPath =
+				savePath.endsWith(".yml") || savePath.endsWith(".yaml")
+					? savePath
+					: `${savePath}.mailnir.yml`;
+
+			setSaveStatus("saving");
+			setSaveError(null);
+			try {
+				const sources: SourceSpec[] = (templateInfo?.sources ?? []).map(
+					(s) => ({
+						namespace: s.namespace,
+						primary: s.is_primary || undefined,
+					}),
+				);
+				await createTemplate(finalPath, sources, templateFields);
+
+				const info = await parseTemplate(finalPath);
+				setTemplatePath(finalPath);
+				setTemplateInfo(info);
+				setTemplateFields(info.fields);
+
+				setSaveStatus("saved");
+				setIsDirty(false);
+				setTimeout(() => setSaveStatus("idle"), 2000);
+			} catch (err) {
+				setSaveError(String(err));
+				setSaveStatus("error");
+			}
+			return;
+		}
+
+		// Normal save for existing templates.
 		setSaveStatus("saving");
 		setSaveError(null);
 		try {
 			await saveTemplate(templatePath, templateFields);
 			setSaveStatus("saved");
+			setIsDirty(false);
 			setTimeout(() => setSaveStatus("idle"), 2000);
 		} catch (err) {
 			setSaveError(String(err));
@@ -476,12 +585,22 @@ export default function App() {
 			<div className="flex h-screen flex-col overflow-hidden bg-background">
 				{/* Toolbar */}
 				<div className="flex shrink-0 items-center gap-3 border-b px-4 py-2">
-					<Button size="sm" variant="outline" onClick={handleOpenTemplate}>
-						Open Template
-					</Button>
+					<div className="flex items-center gap-1.5">
+						<Button size="sm" variant="outline" onClick={handleNewTemplate}>
+							New Template
+						</Button>
+						<Button size="sm" variant="outline" onClick={handleOpenTemplate}>
+							Open Template
+						</Button>
+					</div>
 					{templatePath && (
 						<span className="max-w-md truncate text-xs text-muted-foreground">
 							{templatePath}
+						</span>
+					)}
+					{!templatePath && templateFields && (
+						<span className="text-xs italic text-muted-foreground">
+							Unsaved template
 						</span>
 					)}
 					{templateError && (
@@ -508,7 +627,6 @@ export default function App() {
 					{/* Template editor */}
 					<ResizablePanel defaultSize={48} minSize={25}>
 						<TemplateEditor
-							templatePath={templatePath}
 							templateFields={templateFields}
 							loadId={templateLoadId}
 							namespaces={namespaces}

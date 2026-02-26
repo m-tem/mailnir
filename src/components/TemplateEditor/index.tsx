@@ -9,7 +9,6 @@ import BodyFormatSelect from "./BodyFormatSelect";
 import FieldEditor from "./FieldEditor";
 
 interface Props {
-	templatePath: string | null;
 	templateFields: TemplateFields | null;
 	loadId: number;
 	namespaces: string[];
@@ -21,7 +20,6 @@ interface Props {
 }
 
 export default function TemplateEditor({
-	templatePath,
 	templateFields,
 	loadId,
 	namespaces,
@@ -43,14 +41,14 @@ export default function TemplateEditor({
 		return () => window.removeEventListener("keydown", handler);
 	}, [onSave]);
 
-	if (!templatePath || !templateFields) {
+	if (!templateFields) {
 		return (
 			<div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center">
 				<p className="text-sm font-medium text-muted-foreground">
 					Template Editor
 				</p>
 				<p className="text-xs text-muted-foreground">
-					Open a template to edit it
+					Open or create a template to start editing
 				</p>
 			</div>
 		);

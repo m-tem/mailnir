@@ -22,9 +22,9 @@ By resolution strategy:
 - **Global sources**: No join — entire dataset available (e.g. `sources: cfg: {}`).
 
 By data origin:
-- **File**: Load from disk — user picks file in UI. (MVP)
+- **File**: Load from disk — user picks file in UI.
+- **Form**: No file — Mailnir infers fields from template variables (`namespace.field` references) and displays labeled inputs in the data panel. Produces a single-entry array identical in shape to a one-row data file. Declare with `form: true` on the source config. Works as primary, joined secondary, or global source.
 - **URL**: Fetch from HTTP endpoint, e.g. `sources: api: { url: "https://..." }`. (future)
-- **Form**: No file — Mailnir infers fields from template variables and displays an input form. Ideal for one-off emails without a data file. (future)
 
 All origins produce the same namespace → data shape. They compose freely within one template.
 

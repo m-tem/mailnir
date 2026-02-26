@@ -80,15 +80,16 @@ src-tauri/              # Rust backend
   src/
     lib.rs              # Library root — module declarations, Result alias (no Tauri)
     main.rs             # Tauri entry point — mod commands, builder, invoke_handler
-    commands.rs         # IPC commands: parse_template_cmd, preview_csv, smtp CRUD, preview_validate, preview_render_entry, send_batch, cancel_send
+    commands.rs         # IPC commands: parse_template_cmd, preview_csv, smtp CRUD, preview_validate, preview_render_entry, send_batch, cancel_send, get_form_fields
     error.rs            # MailnirError enum (thiserror)
     template/
       mod.rs
-      types.rs          # Template, SourceConfig, BodyFormat
+      types.rs          # Template, SourceConfig (incl. form flag), BodyFormat
       parse.rs          # parse_template(path), parse_template_str(str)
+      infer.rs          # infer_form_fields(template, namespace) — field inference for form sources
       validate.rs       # validate_sources(&Template)
     data/
-      mod.rs
+      mod.rs            # Shared helpers: normalize_shape, value_type_name
       format.rs         # DataFormat enum + detect_format(path)
       loader.rs         # load_file(path), load_file_csv(path, opts)
       json.rs           # load_json(path)
@@ -109,8 +110,9 @@ src-tauri/              # Rust backend
     phase5_integration.rs
     phase8_integration.rs
     phase9_integration.rs
+    form_integration.rs   # Form data source pipeline tests
   fixtures/
-    templates/          # minimal, full, anchors, composite_join, html_body, text_body
+    templates/          # minimal, full, anchors, composite_join, html_body, text_body, form_source
     data/               # simple.json/yaml/toml, comma/semicolon/pipe/tab.csv, latin1/windows1252.csv
 package.json            # React 19, Vite, @tauri-apps/api v2, tailwindcss v4, shadcn/ui
 vite.config.ts          # @tailwindcss/vite plugin, port 1420, @/ alias
@@ -128,15 +130,16 @@ src/                    # React frontend
   components/
     DataPanel/
       index.tsx         # Namespace slot list, "Open a template" placeholder
-      SourceSlotRow.tsx # Per-namespace row: file picker, status icon, badges
+      SourceSlotRow.tsx # Per-namespace row: file picker or form inputs, status icon, badges
       CsvConfigPanel.tsx  # Separator/encoding selectors + 5-row preview table
+      FormFieldsPanel.tsx # Labeled inputs for form source fields
     SendDialog/
       SendDialog.tsx    # Confirm → progress → report dialog for batch send
     SmtpSettings/
       SmtpSettingsDialog.tsx  # Profile list/CRUD dialog with inline test
       SmtpProfileForm.tsx     # Add/edit SMTP profile form
     StatusBar/
-      index.tsx         # Profile selector, SMTP Settings, Preview, Send buttons
+      index.tsx         # Profile selector, SMTP Settings, Preview toggle, Send buttons
     TemplateEditor/
       index.tsx         # Per-field editors with save, body format selector
       FieldEditor.tsx   # Single-line CodeMirror editor with Handlebars autocomplete
@@ -231,6 +234,7 @@ Focus areas:
 - Join engine: 1:1, 1:N, composite, global, missing match, ambiguous match
 - Rendering: Handlebars resolution, markdown→HTML, CSS inlining, body_format modes, attachment splitting
 - Validation: unresolved vars, RFC 5322 emails, file existence, required fields
+- Form sources: field inference, form flag parsing, full pipeline with form data
 
 ### Integration Tests (Rust)
 

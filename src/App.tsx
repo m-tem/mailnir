@@ -26,6 +26,7 @@ import {
 	previewValidate,
 	type SmtpProfile,
 	type SourceFileSpec,
+	type SourceSlot,
 	type SourceSpec,
 	saveSmtpProfiles,
 	saveTemplate,
@@ -35,6 +36,16 @@ import {
 
 function isCsvPath(path: string): boolean {
 	return path.toLowerCase().endsWith(".csv");
+}
+
+function slotsToSpecs(slots: SourceSlot[]): SourceSpec[] {
+	return slots.map((s) => ({
+		namespace: s.namespace,
+		primary: s.is_primary || undefined,
+		join: Object.keys(s.join).length > 0 ? s.join : undefined,
+		many: s.is_many || undefined,
+		form: s.is_form || undefined,
+	}));
 }
 
 export default function App() {
@@ -72,6 +83,7 @@ export default function App() {
 		null,
 	);
 	const [smtpDialogOpen, setSmtpDialogOpen] = useState(false);
+	const [sourceConfigOpen, setSourceConfigOpen] = useState(false);
 	const [sendDialogOpen, setSendDialogOpen] = useState(false);
 	const [previewVisible, setPreviewVisible] = useState(true);
 
@@ -100,7 +112,12 @@ export default function App() {
 	// Load SMTP profiles on mount
 	useEffect(() => {
 		getSmtpProfiles()
-			.then(setSmtpProfiles)
+			.then((profiles) => {
+				setSmtpProfiles(profiles);
+				if (profiles.length > 0) {
+					setSelectedProfileName((prev) => prev ?? profiles[0].name);
+				}
+			})
 			.catch(() => {});
 	}, []);
 
@@ -249,7 +266,8 @@ export default function App() {
 					namespace: "data",
 					is_primary: true,
 					has_join: false,
-					join_keys: [],
+					join: {},
+					is_many: false,
 					is_form: false,
 				},
 			],
@@ -516,6 +534,28 @@ export default function App() {
 		setIsDirty(true);
 	};
 
+	const handleSourcesChange = (sources: SourceSlot[]) => {
+		if (!templateInfo) return;
+		const newNamespaces = new Set(sources.map((s) => s.namespace));
+		// Prune data state for removed namespaces.
+		setSourcesState((prev) => {
+			const next: Record<string, SourceState> = {};
+			for (const [ns, state] of Object.entries(prev)) {
+				if (newNamespaces.has(ns)) next[ns] = state;
+			}
+			return next;
+		});
+		setNamespaceFields((prev) => {
+			const next: Record<string, string[]> = {};
+			for (const [ns, fields] of Object.entries(prev)) {
+				if (newNamespaces.has(ns)) next[ns] = fields;
+			}
+			return next;
+		});
+		setTemplateInfo({ ...templateInfo, sources });
+		setIsDirty(true);
+	};
+
 	const handleSaveTemplate = async () => {
 		if (!templateFields) return;
 
@@ -536,13 +576,8 @@ export default function App() {
 			setSaveStatus("saving");
 			setSaveError(null);
 			try {
-				const sources: SourceSpec[] = (templateInfo?.sources ?? []).map(
-					(s) => ({
-						namespace: s.namespace,
-						primary: s.is_primary || undefined,
-					}),
-				);
-				await createTemplate(finalPath, sources, templateFields);
+				const specs = slotsToSpecs(templateInfo?.sources ?? []);
+				await createTemplate(finalPath, specs, templateFields);
 
 				const info = await parseTemplate(finalPath);
 				setTemplatePath(finalPath);
@@ -563,7 +598,8 @@ export default function App() {
 		setSaveStatus("saving");
 		setSaveError(null);
 		try {
-			await saveTemplate(templatePath, templateFields);
+			const specs = slotsToSpecs(templateInfo?.sources ?? []);
+			await saveTemplate(templatePath, templateFields, specs);
 			setSaveStatus("saved");
 			setIsDirty(false);
 			setTimeout(() => setSaveStatus("idle"), 2000);
@@ -576,6 +612,11 @@ export default function App() {
 	const handleSaveProfiles = async (profiles: SmtpProfile[]) => {
 		await saveSmtpProfiles(profiles);
 		setSmtpProfiles(profiles);
+		// Auto-select first profile if current selection was deleted or none was selected.
+		setSelectedProfileName((prev) => {
+			if (prev && profiles.some((p) => p.name === prev)) return prev;
+			return profiles.length > 0 ? profiles[0].name : null;
+		});
 	};
 
 	// ── Render ──────────────────────────────────────────────────────────────────
@@ -615,6 +656,9 @@ export default function App() {
 						<DataPanel
 							templateInfo={templateInfo}
 							sourcesState={sourcesState}
+							sourceConfigOpen={sourceConfigOpen}
+							onSourceConfigOpenChange={setSourceConfigOpen}
+							onSourcesChange={handleSourcesChange}
 							onFileSelect={handleFileSelect}
 							onSeparatorChange={handleSeparatorChange}
 							onEncodingChange={handleEncodingChange}

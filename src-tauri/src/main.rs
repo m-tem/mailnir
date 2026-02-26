@@ -17,6 +17,7 @@ fn main() {
             commands::get_data_fields,
             commands::get_form_fields,
             commands::save_template,
+            commands::create_template,
             commands::preview_validate,
             commands::preview_render_entry,
             commands::send_batch,

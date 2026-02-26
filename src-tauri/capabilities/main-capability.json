@@ -12,6 +12,7 @@
     "core:menu:default",
     "core:tray:default",
     "dialog:allow-open",
-    "dialog:allow-save"
+    "dialog:allow-save",
+    "dialog:allow-confirm"
   ]
 }

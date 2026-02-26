@@ -40,6 +40,16 @@ pub struct TemplateInfo {
     pub fields: TemplateFields,
 }
 
+/// Source configuration sent from the frontend for new templates.
+#[derive(Debug, Deserialize)]
+pub struct SourceSpec {
+    pub namespace: String,
+    pub primary: Option<bool>,
+    pub join: Option<HashMap<String, String>>,
+    pub many: Option<bool>,
+    pub form: Option<bool>,
+}
+
 /// Patch payload for save_template — mirrors TemplateFields.
 #[derive(Debug, Deserialize)]
 pub struct TemplatePatch {
@@ -415,6 +425,112 @@ pub fn save_template(path: String, patch: TemplatePatch) -> Result<(), String> {
     }
 
     let yaml_out = serde_yaml::to_string(&doc).map_err(|e| e.to_string())?;
+    std::fs::write(&path, yaml_out).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Create a new template YAML file from scratch.
+///
+/// Unlike `save_template` (which patches an existing file), this writes a
+/// complete template including the `sources` block. Used for the "New Template"
+/// flow where no file exists on disk yet.
+#[tauri::command]
+pub fn create_template(
+    path: String,
+    sources: Vec<SourceSpec>,
+    patch: TemplatePatch,
+) -> Result<(), String> {
+    let mut doc = serde_yaml::Mapping::new();
+
+    // Build sources mapping.
+    let mut sources_map = serde_yaml::Mapping::new();
+    for spec in &sources {
+        let mut source_cfg = serde_yaml::Mapping::new();
+        if spec.primary == Some(true) {
+            source_cfg.insert(
+                serde_yaml::Value::String("primary".into()),
+                serde_yaml::Value::Bool(true),
+            );
+        }
+        if let Some(join) = &spec.join {
+            let mut join_map = serde_yaml::Mapping::new();
+            for (k, v) in join {
+                join_map.insert(
+                    serde_yaml::Value::String(k.clone()),
+                    serde_yaml::Value::String(v.clone()),
+                );
+            }
+            source_cfg.insert(
+                serde_yaml::Value::String("join".into()),
+                serde_yaml::Value::Mapping(join_map),
+            );
+        }
+        if spec.many == Some(true) {
+            source_cfg.insert(
+                serde_yaml::Value::String("many".into()),
+                serde_yaml::Value::Bool(true),
+            );
+        }
+        if spec.form == Some(true) {
+            source_cfg.insert(
+                serde_yaml::Value::String("form".into()),
+                serde_yaml::Value::Bool(true),
+            );
+        }
+        sources_map.insert(
+            serde_yaml::Value::String(spec.namespace.clone()),
+            serde_yaml::Value::Mapping(source_cfg),
+        );
+    }
+    doc.insert(
+        serde_yaml::Value::String("sources".into()),
+        serde_yaml::Value::Mapping(sources_map),
+    );
+
+    // Required fields.
+    doc.insert(
+        serde_yaml::Value::String("to".into()),
+        serde_yaml::Value::String(patch.to),
+    );
+    doc.insert(
+        serde_yaml::Value::String("subject".into()),
+        serde_yaml::Value::String(patch.subject),
+    );
+    doc.insert(
+        serde_yaml::Value::String("body".into()),
+        serde_yaml::Value::String(patch.body),
+    );
+
+    // Optional fields.
+    macro_rules! set_opt {
+        ($key:expr, $val:expr) => {
+            if let Some(v) = $val {
+                if !v.is_empty() {
+                    doc.insert(
+                        serde_yaml::Value::String($key.into()),
+                        serde_yaml::Value::String(v),
+                    );
+                }
+            }
+        };
+    }
+    set_opt!("cc", patch.cc);
+    set_opt!("bcc", patch.bcc);
+    set_opt!("attachments", patch.attachments);
+    set_opt!("stylesheet", patch.stylesheet);
+    set_opt!("style", patch.style);
+
+    if let Some(bf) = &patch.body_format {
+        if matches!(bf.as_str(), "markdown" | "html" | "text") {
+            doc.insert(
+                serde_yaml::Value::String("body_format".into()),
+                serde_yaml::Value::String(bf.clone()),
+            );
+        }
+    }
+
+    let yaml_out =
+        serde_yaml::to_string(&serde_yaml::Value::Mapping(doc)).map_err(|e| e.to_string())?;
     std::fs::write(&path, yaml_out).map_err(|e| e.to_string())?;
     Ok(())
 }

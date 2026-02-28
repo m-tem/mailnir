@@ -145,6 +145,12 @@ impl Default for SendState {
 
 // ── Commands ──────────────────────────────────────────────────────────────────
 
+/// Return the app version string from `git describe`.
+#[tauri::command]
+pub fn get_version_info() -> String {
+    env!("GIT_VERSION").to_string()
+}
+
 /// Parse a template YAML file and return its source slot layout.
 ///
 /// Sources are sorted primary-first, then alphabetically by namespace name.

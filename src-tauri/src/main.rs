@@ -7,6 +7,7 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .manage(commands::SendState::default())
         .invoke_handler(tauri::generate_handler![
+            commands::get_version_info,
             commands::parse_template_cmd,
             commands::preview_csv,
             commands::get_smtp_profiles,

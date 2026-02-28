@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
 	Select,
@@ -7,6 +8,7 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import type { SmtpProfile } from "@/lib/ipc";
+import { getVersionInfo } from "@/lib/ipc";
 
 interface Props {
 	profiles: SmtpProfile[];
@@ -29,8 +31,20 @@ export default function StatusBar({
 	onTogglePreview,
 	onSend,
 }: Props) {
+	const [version, setVersion] = useState("");
+	useEffect(() => {
+		getVersionInfo()
+			.then(setVersion)
+			.catch(() => {});
+	}, []);
+
 	return (
 		<div className="flex items-center gap-2 border-t bg-background px-4 py-2">
+			{version && (
+				<span className="text-[10px] text-muted-foreground select-all">
+					{version}
+				</span>
+			)}
 			<Select
 				value={selectedProfileName ?? ""}
 				onValueChange={onProfileChange}

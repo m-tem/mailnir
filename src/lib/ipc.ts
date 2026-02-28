@@ -111,6 +111,8 @@ export interface SendProgressEvent {
 
 // ── Command wrappers ──────────────────────────────────────────────────────────
 
+export const getVersionInfo = (): Promise<string> => invoke("get_version_info");
+
 export const parseTemplate = (path: string): Promise<TemplateInfo> =>
 	invoke("parse_template_cmd", { path });
 

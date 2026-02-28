@@ -1,5 +1,6 @@
 [package]
 name = "mailnir"
+# Not used for display — the UI version comes from `git describe` (see build.rs).
 version = "0.1.0"
 edition = "2021"
 

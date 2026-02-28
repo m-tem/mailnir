@@ -5,6 +5,12 @@ mod commands;
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            use tauri::Manager;
+            let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/128x128.png"))?;
+            app.get_webview_window("main").unwrap().set_icon(icon)?;
+            Ok(())
+        })
         .manage(commands::SendState::default())
         .invoke_handler(tauri::generate_handler![
             commands::get_version_info,
